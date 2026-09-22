@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="project_task_view_form_custom_extension" model="ir.ui.view">
+        <field name="name">project.task.form.custom.extension</field>
+        <field name="model">project.task</field>
+        <field name="inherit_id" ref="project.view_task_form2"/>
+        <field name="arch" type="xml">
+            <xpath expr="//label[@for='date_deadline']" position="attributes">
+                <attribute name="for">planned_date_begin</attribute>
+                <attribute name="string">Fecha límite</attribute>
+            </xpath>
+            <xpath expr="//div[@id='date_deadline_and_recurring_task']/field[@name='date_deadline']" position="replace">
+                <field name="planned_date_begin"
+                       nolabel="1"
+                       widget="daterange"
+                       options="{'end_date_field': 'date_deadline', 'always_range': True}"
+                       decoration-danger="date_deadline and date_deadline &lt; current_date and state not in ['1_done', '1_canceled']"/>
+                <field name="date_deadline" invisible="1"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="project_task_view_list_custom_extension" model="ir.ui.view">
+        <field name="name">project.task.list.custom.extension</field>
+        <field name="model">project.task</field>
+        <field name="inherit_id" ref="project.project_task_view_tree_main_base"/>
+        <field name="arch" type="xml">
+            <field name="date_deadline" position="before">
+                <field name="planned_date_begin" optional="hide"/>
+            </field>
+        </field>
+    </record>
+</odoo>

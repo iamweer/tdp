@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="project_project_view_form_custom_extension" model="ir.ui.view">
+        <field name="name">project.project.form.custom.extension</field>
+        <field name="model">project.project</field>
+        <field name="inherit_id" ref="project.edit_project"/>
+        <field name="arch" type="xml">
+            <field name="date" position="after">
+                <field name="warranty_start_date"/>
+                <field name="warranty_end_date"/>
+            </field>
+        </field>
+    </record>
+
+    <record id="project_project_view_kanban_custom_extension" model="ir.ui.view">
+        <field name="name">project.project.kanban.custom.extension</field>
+        <field name="model">project.project</field>
+        <field name="inherit_id" ref="project.view_project_kanban"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@t-if='record.date.raw_value or record.date_start.raw_value']" position="after">
+                <div t-if="record.warranty_period_display.raw_value" class="text-muted">
+                    <span class="fa fa-shield me-2" title="Garantía"/>
+                    <field name="warranty_period_display"/>
+                </div>
+            </xpath>
+        </field>
+    </record>
+</odoo>
