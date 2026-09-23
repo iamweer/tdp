@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="project_custom_extension.ProjectDashboard">
+        <div class="o_project_dashboard">
+            <div class="o_project_dashboard_container">
+                <header class="o_project_dashboard_header">
+                    <div class="o_project_dashboard_heading">
+                        <p class="o_project_dashboard_eyebrow">Portafolio de clientes</p>
+                        <h1>Estado General de Proyectos</h1>
+                    </div>
+                    <div class="o_project_dashboard_toolbar">
+                        <div class="o_project_dashboard_customer_filter">
+                            <label for="project_dashboard_customer">Cliente</label>
+                            <div class="o_project_dashboard_customer_control">
+                                <Many2XAutocomplete
+                                    id="'project_dashboard_customer'"
+                                    value="customerValue"
+                                    resModel="'res.partner'"
+                                    fieldString="'Cliente'"
+                                    placeholder="'Todos los clientes'"
+                                    activeActions="customerActiveActions"
+                                    getDomain.bind="getCustomerDomain"
+                                    update.bind="onCustomerUpdate"
+                                    searchLimit="10"
+                                />
+                                <button t-if="hasSelectedCustomer"
+                                        type="button"
+                                        class="btn btn-link o_project_dashboard_clear_customer"
+                                        t-on-click="showAllCustomers"
+                                        title="Mostrar todos los clientes"
+                                        aria-label="Mostrar todos los clientes">
+                                    <i class="fa fa-times" aria-hidden="true"/>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </header>
+
+                <div t-if="state.error" class="o_project_dashboard_feedback" role="alert">
+                    <i class="fa fa-exclamation-circle" aria-hidden="true"/>
+                    <div>
+                        <strong>No se pudo cargar la información.</strong>
+                        <p>Comprueba la conexión e inténtalo nuevamente.</p>
+                    </div>
+                    <button type="button" class="btn btn-primary" t-on-click="refreshDashboard">
+                        Reintentar
+                    </button>
+                </div>
+
+                <div t-elif="state.loading and !state.data" class="o_project_dashboard_initial_loading" aria-live="polite">
+                    <i class="fa fa-spinner fa-spin" aria-hidden="true"/>
+                    <span>Cargando estado del portafolio…</span>
+                </div>
+
+                <main t-elif="state.data"
+                      t-attf-class="o_project_dashboard_content #{state.loading ? 'o_project_dashboard_content--loading' : ''}"
+                      aria-live="polite">
+                    <section class="o_project_dashboard_kpis" aria-label="Indicadores de proyectos">
+                        <button t-foreach="state.data.kpis"
+                                t-as="kpi"
+                                t-key="kpi.key"
+                                type="button"
+                                t-attf-class="o_project_dashboard_kpi o_project_dashboard_kpi--#{kpi.key}"
+                                t-on-click="() => this.openMetric(kpi)">
+                            <span class="o_project_dashboard_kpi_icon">
+                                <i t-attf-class="fa #{kpi.icon}" aria-hidden="true"/>
+                            </span>
+                            <span class="o_project_dashboard_kpi_copy">
+                                <span class="o_project_dashboard_kpi_title" t-out="kpi.title"/>
+                                <strong class="o_project_dashboard_kpi_value" t-out="kpi.count"/>
+                            </span>
+                            <i class="fa fa-chevron-right o_project_dashboard_kpi_arrow" aria-hidden="true"/>
+                        </button>
+                    </section>
+
+                    <div class="o_project_dashboard_main_grid">
+                        <section class="o_project_dashboard_panel o_project_dashboard_progress_panel">
+                            <header class="o_project_dashboard_panel_header">
+                                <div>
+                                    <i class="fa fa-bar-chart" aria-hidden="true"/>
+                                    <h2>Avance de Proyectos</h2>
+                                </div>
+                                <button type="button"
+                                        class="btn btn-link"
+                                        t-on-click="() => this.openMetric(state.data.project_action)">
+                                    Ver lista
+                                </button>
+                            </header>
+                            <div t-if="state.data.projects.length" class="o_project_dashboard_projects">
+                                <button t-foreach="state.data.projects"
+                                        t-as="project"
+                                        t-key="project.id"
+                                        type="button"
+                                        class="o_project_dashboard_project_row"
+                                        t-on-click="() => this.openProject(project)">
+                                    <span t-attf-class="o_project_dashboard_project_status o_project_dashboard_project_status--#{project.status}"
+                                          t-att-title="project.status_label"/>
+                                    <span class="o_project_dashboard_project_identity">
+                                        <strong t-out="project.name"/>
+                                        <small t-if="project.customer_name" t-out="project.customer_name"/>
+                                    </span>
+                                    <span class="o_project_dashboard_progress_track" aria-hidden="true">
+                                        <span t-attf-class="o_project_dashboard_progress_bar o_project_dashboard_progress_bar--#{project.status}"
+                                              t-att-style="'width: ' + project.progress + '%'"/>
+                                    </span>
+                                    <strong class="o_project_dashboard_progress_value">
+                                        <t t-out="formatPercentage(project.progress)"/>%
+                                    </strong>
+                                    <i class="fa fa-chevron-right" aria-hidden="true"/>
+                                </button>
+                            </div>
+                            <div t-else="" class="o_project_dashboard_empty">
+                                <i class="fa fa-folder-open-o" aria-hidden="true"/>
+                                <p>No hay proyectos activos para este cliente.</p>
+                            </div>
+                        </section>
+
+                        <section class="o_project_dashboard_panel o_project_dashboard_alerts_panel">
+                            <header class="o_project_dashboard_panel_header">
+                                <div>
+                                    <i class="fa fa-bell" aria-hidden="true"/>
+                                    <h2>Alertas del Portafolio</h2>
+                                </div>
+                            </header>
+                            <div class="o_project_dashboard_alerts">
+                                <button t-foreach="state.data.alerts"
+                                        t-as="alert"
+                                        t-key="alert.key"
+                                        type="button"
+                                        t-attf-class="o_project_dashboard_alert o_project_dashboard_alert--#{alert.key}"
+                                        t-on-click="() => this.openMetric(alert)">
+                                    <span class="o_project_dashboard_alert_icon">
+                                        <i t-attf-class="fa #{alert.icon}" aria-hidden="true"/>
+                                    </span>
+                                    <span class="o_project_dashboard_alert_count" t-out="alert.count"/>
+                                    <span class="o_project_dashboard_alert_copy">
+                                        <strong t-out="alert.title"/>
+                                        <small t-out="alert.subtitle"/>
+                                    </span>
+                                    <i class="fa fa-chevron-right" aria-hidden="true"/>
+                                </button>
+                            </div>
+                        </section>
+                    </div>
+
+                    <section t-attf-class="o_project_dashboard_health o_project_dashboard_health--#{state.data.health.tone}">
+                        <div class="o_project_dashboard_health_intro">
+                            <span class="o_project_dashboard_health_icon">
+                                <i class="fa fa-heartbeat" aria-hidden="true"/>
+                            </span>
+                            <div>
+                                <h2>Salud General del Portafolio</h2>
+                                <p>Indicador basado en avance, estado, riesgos, bloqueos y cumplimiento.</p>
+                            </div>
+                        </div>
+                        <div class="o_project_dashboard_health_gauge" aria-hidden="true">
+                            <svg viewBox="0 0 200 112" role="img">
+                                <path class="o_project_dashboard_gauge_arc o_project_dashboard_gauge_arc--danger"
+                                      d="M 20 100 A 80 80 0 0 1 52.98 35.28"/>
+                                <path class="o_project_dashboard_gauge_arc o_project_dashboard_gauge_arc--warning"
+                                      d="M 52.98 35.28 A 80 80 0 0 1 147.02 35.28"/>
+                                <path class="o_project_dashboard_gauge_arc o_project_dashboard_gauge_arc--success"
+                                      d="M 147.02 35.28 A 80 80 0 0 1 180 100"/>
+                                <g t-if="state.data.health.score !== false" t-att-transform="gaugeNeedleTransform">
+                                    <line class="o_project_dashboard_gauge_needle" x1="100" y1="100" x2="166" y2="100"/>
+                                </g>
+                                <circle class="o_project_dashboard_gauge_center" cx="100" cy="100" r="8"/>
+                            </svg>
+                        </div>
+                        <div class="o_project_dashboard_health_result">
+                            <strong t-if="state.data.health.score !== false">
+                                <t t-out="state.data.health.score"/>%
+                            </strong>
+                            <strong t-else="">—</strong>
+                            <span t-out="state.data.health.label"/>
+                        </div>
+                        <div class="o_project_dashboard_health_breakdown">
+                            <div>
+                                <span>Avance</span>
+                                <strong t-if="state.data.health.components.progress !== false">
+                                    <t t-out="formatPercentage(state.data.health.components.progress)"/>%
+                                </strong>
+                                <strong t-else="">—</strong>
+                            </div>
+                            <div>
+                                <span>Estado</span>
+                                <strong t-if="state.data.health.components.status !== false">
+                                    <t t-out="formatPercentage(state.data.health.components.status)"/>%
+                                </strong>
+                                <strong t-else="">—</strong>
+                            </div>
+                            <div>
+                                <span>Operación</span>
+                                <strong t-if="state.data.health.components.operations !== false">
+                                    <t t-out="formatPercentage(state.data.health.components.operations)"/>%
+                                </strong>
+                                <strong t-else="">—</strong>
+                            </div>
+                        </div>
+                    </section>
+                </main>
+            </div>
+        </div>
+    </t>
+</templates>

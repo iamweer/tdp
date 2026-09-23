@@ -30,4 +30,8 @@
             </field>
         </field>
     </record>
+
+    <record id="project.action_view_all_task" model="ir.actions.act_window">
+        <field name="domain">[]</field>
+    </record>
 </odoo>

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="res_config_settings_view_form_project_dashboard" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.project.dashboard</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="project.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//app[@name='project']" position="inside">
+                <block title="Dashboard de proyectos" id="project_dashboard_settings">
+                    <setting id="project_dashboard_health_weights"
+                             string="Pesos de la salud general"
+                             help="Define la participación del avance, el estado y la operación. Los tres valores deben sumar 100.">
+                        <div class="content-group">
+                            <div class="row mt16">
+                                <label for="project_dashboard_progress_weight" class="col-lg-5 o_light_label"/>
+                                <div class="col-lg-7">
+                                    <field name="project_dashboard_progress_weight" class="oe_inline"/>
+                                    <span class="ms-1">%</span>
+                                </div>
+                            </div>
+                            <div class="row mt8">
+                                <label for="project_dashboard_status_weight" class="col-lg-5 o_light_label"/>
+                                <div class="col-lg-7">
+                                    <field name="project_dashboard_status_weight" class="oe_inline"/>
+                                    <span class="ms-1">%</span>
+                                </div>
+                            </div>
+                            <div class="row mt8">
+                                <label for="project_dashboard_operations_weight" class="col-lg-5 o_light_label"/>
+                                <div class="col-lg-7">
+                                    <field name="project_dashboard_operations_weight" class="oe_inline"/>
+                                    <span class="ms-1">%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </setting>
+                    <setting id="project_dashboard_health_thresholds"
+                             string="Umbrales de salud"
+                             help="Los resultados por debajo del umbral de atención se consideran críticos.">
+                        <div class="content-group">
+                            <div class="row mt16">
+                                <label for="project_dashboard_healthy_threshold" class="col-lg-5 o_light_label"/>
+                                <div class="col-lg-7">
+                                    <field name="project_dashboard_healthy_threshold" class="oe_inline"/>
+                                    <span class="ms-1">%</span>
+                                </div>
+                            </div>
+                            <div class="row mt8">
+                                <label for="project_dashboard_attention_threshold" class="col-lg-5 o_light_label"/>
+                                <div class="col-lg-7">
+                                    <field name="project_dashboard_attention_threshold" class="oe_inline"/>
+                                    <span class="ms-1">%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </setting>
+                </block>
+            </xpath>
+        </field>
+    </record>
+</odoo>

@@ -7,9 +7,26 @@
     "license": "LGPL-3",
     "depends": ["project"],
     "data": [
+        "views/res_config_settings_views.xml",
+        "views/project_dashboard_views.xml",
+        "views/project_detail_dashboard_views.xml",
         "views/project_project_views.xml",
         "views/project_task_views.xml",
     ],
+    "assets": {
+        "web.assets_backend": [
+            "project_custom_extension/static/src/dashboard/project_dashboard.js",
+            "project_custom_extension/static/src/dashboard/project_dashboard.xml",
+            "project_custom_extension/static/src/dashboard/project_dashboard.scss",
+            "project_custom_extension/static/src/dashboard/project_detail_dashboard.js",
+            "project_custom_extension/static/src/dashboard/project_detail_dashboard.xml",
+            "project_custom_extension/static/src/dashboard/project_detail_dashboard.scss",
+        ],
+        "web.assets_unit_tests": [
+            "project_custom_extension/static/tests/project_dashboard.test.js",
+            "project_custom_extension/static/tests/project_detail_dashboard.test.js",
+        ],
+    },
     "post_init_hook": "post_init_hook",
     "installable": True,
     "application": False,

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="action_project_dashboard" model="ir.actions.client">
+        <field name="name">Dashboard de proyectos</field>
+        <field name="tag">project_custom_extension.ProjectDashboard</field>
+    </record>
+
+    <menuitem id="menu_project_dashboard"
+              name="Dashboard de proyectos"
+              parent="project.menu_project_report"
+              action="action_project_dashboard"
+              sequence="1"
+              groups="project.group_project_user,project.group_project_manager"/>
+</odoo>
