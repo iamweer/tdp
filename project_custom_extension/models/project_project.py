@@ -546,7 +546,7 @@ class ProjectProject(models.Model):
                 _("Actividades Críticas"),
                 _("Requieren atención inmediata"),
                 "fa-exclamation-triangle",
-                [("priority", "=", "1")],
+                [("date_deadline", "<", current_datetime)],
             ),
             (
                 "upcoming",
@@ -564,6 +564,13 @@ class ProjectProject(models.Model):
                 _("Impedimentos que afectan el progreso"),
                 "fa-lock",
                 [("state", "=", "04_waiting_normal")],
+            ),
+            (
+                "no_deadline",
+                _("Tareas sin fecha"),
+                _("No tienen fecha límite"),
+                "fa-calendar-o",
+                [("date_deadline", "=", False)],
             ),
         )
         alerts = []

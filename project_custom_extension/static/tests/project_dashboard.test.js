@@ -99,6 +99,15 @@ function makePayload({ partner = false, activeCount = 2, projectName = "Proyecto
                 model: "project.task",
                 domain: taskDomain,
             },
+            {
+                key: "no_deadline",
+                title: "Tareas sin fecha",
+                subtitle: "No tienen fecha límite",
+                icon: "fa-calendar-o",
+                count: 2,
+                model: "project.task",
+                domain: taskDomain,
+            },
         ],
         health: {
             score: 78,

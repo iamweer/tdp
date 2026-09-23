@@ -282,6 +282,7 @@ class TestProjectDashboard(TransactionCase):
             "project_id": cls.on_track_project.id,
             "parent_id": cls.safe_task.id,
             "priority": "1",
+            "date_deadline": fields.Datetime.now() - timedelta(days=1),
         })
         cls.upcoming_subtask = cls.env["project.task"].create({
             "name": "Subtarea próxima",
@@ -420,7 +421,7 @@ class TestProjectDashboard(TransactionCase):
         }
         self.assertGreaterEqual(state_counts["01_in_progress"], 1)
         self.assertGreaterEqual(state_counts["1_done"], 1)
-        self.assertEqual(data["critical_activities"]["count"], 1)
+        self.assertEqual(data["critical_activities"]["count"], 2)
         self.assertEqual(
             data["critical_activities"]["items"][0]["name"],
             "Tarea vencida",
@@ -444,7 +445,7 @@ class TestProjectDashboard(TransactionCase):
             self.partner_a.id,
         )
 
-        self.assertEqual(data["critical_activities"]["count"], 3)
+        self.assertEqual(data["critical_activities"]["count"], 4)
         self.assertEqual(
             [item["id"] for item in data["critical_activities"]["items"]],
             [earliest.id, middle.id, self.overdue_task.id],
@@ -549,9 +550,14 @@ class TestProjectDashboard(TransactionCase):
         critical = self._item_by_key(data["alerts"], "critical")
         upcoming = self._item_by_key(data["alerts"], "upcoming")
         blocked = self._item_by_key(data["alerts"], "blocked")
+        no_deadline = self._item_by_key(data["alerts"], "no_deadline")
 
         self.assertIn(
             self.critical_subtask,
+            self.env["project.task"].search(critical["domain"]),
+        )
+        self.assertNotIn(
+            self.safe_task,
             self.env["project.task"].search(critical["domain"]),
         )
         self.assertIn(
@@ -562,6 +568,15 @@ class TestProjectDashboard(TransactionCase):
             self.blocked_subtask,
             self.env["project.task"].search(blocked["domain"]),
         )
+        self.assertIn(
+            self.blocker_task,
+            self.env["project.task"].search(no_deadline["domain"]),
+        )
+        self.assertIn(
+            self.blocked_subtask,
+            self.env["project.task"].search(no_deadline["domain"]),
+        )
+        self.assertEqual(no_deadline["count"], 2)
         self.assertNotIn(
             self.done_project,
             self.env["project.task"].search(critical["domain"]).project_id,
@@ -601,13 +616,23 @@ class TestProjectDashboard(TransactionCase):
             data["alerts"],
             "critical",
         )["count"]
-        self.overdue_task.write({"priority": "1"})
+        new_overdue_task = self.env["project.task"].create({
+            "name": "Otra tarea retrasada",
+            "project_id": self.on_track_project.id,
+            "date_deadline": fields.Datetime.now() - timedelta(days=1),
+        })
         refreshed = self.env["project.project"].get_project_dashboard_data(
             self.partner_a.id
         )
         self.assertEqual(
             previous_critical_count + 1,
             self._item_by_key(refreshed["alerts"], "critical")["count"],
+        )
+        self.assertIn(
+            new_overdue_task,
+            self.env["project.task"].search(
+                self._item_by_key(refreshed["alerts"], "critical")["domain"]
+            ),
         )
         self.assertGreaterEqual(refreshed["health"]["components"]["operations"], 0)
 

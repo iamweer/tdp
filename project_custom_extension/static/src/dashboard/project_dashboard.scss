@@ -473,6 +473,16 @@
     }
 }
 
+.o_project_dashboard_alert--no_deadline {
+    .o_project_dashboard_alert_icon {
+        background: linear-gradient(145deg, #9575cd, #60439a);
+    }
+
+    .o_project_dashboard_alert_count {
+        color: #6e50ad;
+    }
+}
+
 .o_project_dashboard_health {
     display: grid;
     grid-template-columns: minmax(300px, 1.1fr) minmax(240px, 0.9fr) minmax(160px, 0.45fr);
