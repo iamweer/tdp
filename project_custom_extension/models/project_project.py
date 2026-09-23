@@ -1,7 +1,9 @@
 from datetime import timedelta
 
+from lxml import etree
+
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import AccessError, ValidationError
 from odoo.osv import expression
 
 
@@ -37,6 +39,60 @@ DASHBOARD_STATUS_ORDER = {
 
 class ProjectProject(models.Model):
     _inherit = "project.project"
+
+    @api.model
+    def get_view(self, view_id=None, view_type="form", **options):
+        result = super().get_view(view_id, view_type, **options)
+        if (
+            not self.env.user.has_group(
+                "project_custom_extension.group_project_client"
+            )
+            or self.env.user.has_group("project.group_project_manager")
+        ):
+            return result
+
+        arch = etree.fromstring(result["arch"])
+        if arch.tag in {"form", "list", "kanban"}:
+            arch.set("create", "false")
+            arch.set("edit", "false")
+            arch.set("delete", "false")
+        result["arch"] = etree.tostring(arch, encoding="unicode")
+        return result
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        if not self.env.su and not self.env.user.has_group(
+            "project.group_project_manager"
+        ) and (
+            self.env.user.has_group("project_custom_extension.group_project_client")
+            or not self.env.user.has_group("project.group_project_user")
+        ):
+            raise AccessError(_("No tiene permiso para crear proyectos."))
+        return super().create(vals_list)
+
+    def write(self, vals):
+        if self.env.su or self.env.user.has_group("project.group_project_manager"):
+            return super().write(vals)
+        if (
+            self.env.user.has_group("project_custom_extension.group_project_client")
+            or not self.env.user.has_group("project.group_project_user")
+        ):
+            raise AccessError(_("No tiene permiso para modificar proyectos."))
+
+        self.check_access("write")
+        if any(project.create_uid != self.env.user for project in self):
+            raise AccessError(
+                _("Solo puede modificar los proyectos que usted creó.")
+            )
+        return super().write(vals)
+
+    def unlink(self):
+        if (
+            not self.env.su
+            and not self.env.user.has_group("project.group_project_manager")
+        ):
+            raise AccessError(_("Solo un administrador puede eliminar proyectos."))
+        return super().unlink()
 
     warranty_start_date = fields.Date(
         string="Inicio garantía",

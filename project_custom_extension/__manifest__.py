@@ -1,12 +1,14 @@
 {
     "name": "Extensión personalizada de proyectos",
     "summary": "Fechas planeadas, garantías y migración del flujo de subtareas",
-    "version": "18.0.1.0.0",
+    "version": "18.0.1.1.0",
     "category": "Services/Project",
     "author": "TDP",
     "license": "LGPL-3",
     "depends": ["project"],
     "data": [
+        "security/project_security.xml",
+        "security/ir.model.access.csv",
         "views/res_config_settings_views.xml",
         "views/project_dashboard_views.xml",
         "views/project_detail_dashboard_views.xml",

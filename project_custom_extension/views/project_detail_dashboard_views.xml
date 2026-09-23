@@ -10,5 +10,5 @@
               parent="project.menu_project_report"
               action="action_project_detail_dashboard"
               sequence="2"
-              groups="project.group_project_user,project.group_project_manager"/>
+              groups="project.group_project_user,project.group_project_manager,project_custom_extension.group_project_client"/>
 </odoo>

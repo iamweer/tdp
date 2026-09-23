@@ -1,0 +1,4 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_project_project_user_custom,project.project.user.custom,project.model_project_project,project.group_project_user,1,1,1,0
+access_project_project_client,project.project.client,project.model_project_project,project_custom_extension.group_project_client,1,0,0,0
+access_project_task_client,project.task.client,project.model_project_task,project_custom_extension.group_project_client,1,1,0,0
