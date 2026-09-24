@@ -92,6 +92,12 @@
                                     <i class="fa fa-external-link" aria-hidden="true"/>
                                     Abrir proyecto
                                 </button>
+                                <button type="button"
+                                        class="o_project_detail_dashboard_open_project o_project_detail_dashboard_open_gantt"
+                                        t-on-click="openProjectGantt">
+                                    <i class="fa fa-calendar" aria-hidden="true"/>
+                                    Cronograma
+                                </button>
                             </header>
                             <div class="o_project_detail_dashboard_overview_body">
                                 <div class="o_project_detail_dashboard_project_identity">

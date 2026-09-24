@@ -1,6 +1,7 @@
 /** @odoo-module **/
 
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
+import { animationFrame } from "@odoo/hoot-mock";
 import {
     mockService,
     mountWithCleanup,
@@ -162,6 +163,7 @@ describe("detalle de proyecto", () => {
         expect(detailCalls).toHaveLength(0);
 
         await component.onProjectUpdate([{ id: 12, display_name: "Proyecto 12" }]);
+        await animationFrame();
 
         expect(detailCalls).toEqual([{ project_id: 12, partner_id: false }]);
         expect(".o_project_detail_dashboard_content").toHaveCount(1);
@@ -228,6 +230,31 @@ describe("detalle de proyecto", () => {
         expect(executedActions[2].domain).toEqual(
             component.activityStates[0].domain
         );
+    });
+
+    test("opens the shared project gantt action from project detail", async () => {
+        mockService("orm", {
+            call(model, method) {
+                return method === "get_project_detail_dashboard_filters"
+                    ? { customer_ids: [1] }
+                    : makeData(12);
+            },
+        });
+
+        const component = await mountWithCleanup(ProjectDetailDashboard, {
+            noMainContainer: true,
+        });
+        await component.onProjectUpdate([{ id: 12, display_name: "Proyecto 12" }]);
+
+        component.openProjectGantt();
+
+        expect(executedActions[0]).toEqual({
+            type: "ir.actions.client",
+            name: "Cronograma de proyecto",
+            tag: "project_custom_extension.ProjectGantt",
+            target: "current",
+            context: { project_id: 12 },
+        });
     });
 
     test("does not let a stale project request replace the latest selection", async () => {

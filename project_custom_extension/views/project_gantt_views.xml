@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="action_project_gantt" model="ir.actions.client">
+        <field name="name">Cronograma de proyecto</field>
+        <field name="tag">project_custom_extension.ProjectGantt</field>
+    </record>
+
+    <menuitem id="menu_project_gantt"
+              name="Cronograma de proyecto"
+              parent="project.menu_project_report"
+              action="action_project_gantt"
+              sequence="3"
+              groups="project.group_project_user,project.group_project_manager,project_custom_extension.group_project_client"/>
+
+    <record id="project_project_view_form_gantt_custom_extension" model="ir.ui.view">
+        <field name="name">project.project.form.gantt.custom.extension</field>
+        <field name="model">project.project</field>
+        <field name="inherit_id" ref="project.edit_project"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@name='button_box']/button[@name='action_view_tasks']" position="after">
+                <button class="oe_stat_button"
+                        type="object"
+                        name="action_open_project_gantt"
+                        icon="fa-calendar"
+                        groups="project.group_project_user,project.group_project_manager,project_custom_extension.group_project_client">
+                    <div class="o_field_widget o_stat_info">
+                        <span class="o_stat_text">Cronograma</span>
+                    </div>
+                </button>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="project_project_view_kanban_gantt_custom_extension" model="ir.ui.view">
+        <field name="name">project.project.kanban.gantt.custom.extension</field>
+        <field name="model">project.project</field>
+        <field name="inherit_id" ref="project.view_project_kanban"/>
+        <field name="arch" type="xml">
+            <xpath expr="//*[hasclass('o_project_kanban_boxes')]" position="inside">
+                <a class="o_project_kanban_box o_project_gantt_kanban_button"
+                   name="action_open_project_gantt"
+                   type="object"
+                   role="button"
+                   title="Abrir cronograma"
+                   aria-label="Abrir cronograma"
+                   groups="project.group_project_user,project.group_project_manager,project_custom_extension.group_project_client">
+                    <span class="fa fa-calendar" aria-hidden="true"/>
+                </a>
+            </xpath>
+        </field>
+    </record>
+</odoo>

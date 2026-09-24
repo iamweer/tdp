@@ -1,0 +1,288 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="project_custom_extension.ProjectGantt">
+        <div t-ref="root"
+             t-att-class="'o_project_gantt ' + (isFullscreen ? 'o_project_gantt--fullscreen' : '')"
+             t-att-style="rootStyle">
+            <header class="o_project_gantt_topbar">
+                <div class="o_project_gantt_heading">
+                    <div class="o_project_gantt_title_line">
+                        <i class="fa fa-calendar" aria-hidden="true"/>
+                        <h1 t-out="project ? project.name : 'Cronograma de proyecto'"/>
+                    </div>
+                    <p t-if="project">
+                        <span t-out="project.customer_name"/>
+                        <t t-if="project.start_date or project.end_date">
+                            <span class="o_project_gantt_heading_separator">·</span>
+                            <t t-out="formatDate(project.start_date)"/>
+                            <span>→</span>
+                            <t t-out="formatDate(project.end_date)"/>
+                        </t>
+                    </p>
+                    <p t-else="">Planificación visual de actividades</p>
+                </div>
+
+                <div class="o_project_gantt_project_selector">
+                    <label for="project_gantt_project">Proyecto</label>
+                    <Many2XAutocomplete
+                        id="'project_gantt_project'"
+                        value="projectValue"
+                        resModel="'project.project'"
+                        fieldString="'Proyecto'"
+                        placeholder="'Selecciona un proyecto'"
+                        activeActions="activeActions"
+                        getDomain.bind="getProjectDomain"
+                        update.bind="onProjectUpdate"
+                        searchLimit="15"
+                    />
+                </div>
+
+                <div class="o_project_gantt_header_actions">
+                    <button type="button"
+                            t-attf-class="btn btn-light o_project_gantt_filter_toggle #{filterApplied ? 'is-active' : ''}"
+                            t-on-click="toggleFilters"
+                            title="Filtrar por fechas">
+                        <i class="fa fa-filter" aria-hidden="true"/>
+                        <span>Filtros</span>
+                        <span t-if="filterApplied" class="o_project_gantt_filter_badge">1</span>
+                    </button>
+                    <label class="o_project_gantt_scale_selector">
+                        <span>Escala</span>
+                        <select t-att-value="state.scale" t-on-change="onScaleChange">
+                            <option t-foreach="scaleOptions"
+                                    t-as="scale"
+                                    t-key="scale.value"
+                                    t-att-value="scale.value"
+                                    t-out="scale.label"/>
+                        </select>
+                    </label>
+                    <button type="button"
+                            class="btn btn-primary"
+                            t-if="hasProject"
+                            t-on-click="exportCsv">
+                        <i class="fa fa-download" aria-hidden="true"/>
+                        Exportar
+                    </button>
+                </div>
+            </header>
+
+            <section t-if="state.filterOpen" class="o_project_gantt_filter_panel">
+                <div class="o_project_gantt_filter_field">
+                    <label for="project_gantt_filter_start">Fecha de inicio</label>
+                    <input id="project_gantt_filter_start"
+                           type="date"
+                           t-att-value="state.filterStart"
+                           t-on-input="onFilterStartInput"/>
+                </div>
+                <div class="o_project_gantt_filter_field">
+                    <label for="project_gantt_filter_end">Fecha fin</label>
+                    <input id="project_gantt_filter_end"
+                           type="date"
+                           t-att-value="state.filterEnd"
+                           t-on-input="onFilterEndInput"/>
+                </div>
+                <div class="o_project_gantt_filter_actions">
+                    <button type="button"
+                            class="btn btn-primary"
+                            t-on-click="applyFilters"
+                            t-att-disabled="!hasProject">
+                        Aplicar
+                    </button>
+                    <button type="button"
+                            class="btn btn-link"
+                            t-on-click="clearFilters">
+                        Limpiar
+                    </button>
+                </div>
+                <p t-if="state.filterError" class="o_project_gantt_filter_error" role="alert">
+                    <i class="fa fa-exclamation-circle" aria-hidden="true"/>
+                    <t t-out="state.filterError"/>
+                </p>
+            </section>
+
+            <div t-if="state.error and state.error !== true" class="o_project_gantt_feedback" role="alert">
+                <i class="fa fa-exclamation-circle" aria-hidden="true"/>
+                <span t-out="state.error"/>
+            </div>
+            <div t-elif="state.error" class="o_project_gantt_feedback" role="alert">
+                <i class="fa fa-exclamation-circle" aria-hidden="true"/>
+                <span>No fue posible cargar el cronograma del proyecto.</span>
+                <button type="button" class="btn btn-primary" t-on-click="() => this.loadProject(state.selectedProject?.id)">
+                    Reintentar
+                </button>
+            </div>
+            <div t-elif="state.loading" class="o_project_gantt_feedback" aria-live="polite">
+                <i class="fa fa-spinner fa-spin" aria-hidden="true"/>
+                <span>Cargando cronograma…</span>
+            </div>
+            <div t-elif="!hasProject" class="o_project_gantt_empty">
+                <i class="fa fa-calendar-o" aria-hidden="true"/>
+                <strong>Selecciona un proyecto para ver su cronograma.</strong>
+                <span>Solo se muestran proyectos activos y accesibles para tu usuario.</span>
+            </div>
+            <main t-else="" class="o_project_gantt_content" aria-live="polite">
+                <div class="o_project_gantt_toolbar">
+                    <div class="o_project_gantt_navigation">
+                        <button type="button" class="btn btn-light" t-on-click="goPrevious" title="Periodo anterior" aria-label="Periodo anterior">
+                            <i class="fa fa-chevron-left" aria-hidden="true"/>
+                        </button>
+                        <button type="button" class="btn btn-light" t-on-click="goNext" title="Periodo siguiente" aria-label="Periodo siguiente">
+                            <i class="fa fa-chevron-right" aria-hidden="true"/>
+                        </button>
+                        <button type="button" class="btn btn-light o_project_gantt_today" t-on-click="goToday">
+                            Hoy
+                        </button>
+                        <span class="o_project_gantt_range">
+                            <i class="fa fa-calendar" aria-hidden="true"/>
+                            <t t-out="formatRange()"/>
+                        </span>
+                    </div>
+                    <div class="o_project_gantt_toolbar_actions">
+                        <span t-if="filterApplied" class="o_project_gantt_filter_summary">
+                            <i class="fa fa-filter" aria-hidden="true"/>
+                            <t t-out="filterSummary"/>
+                        </span>
+                        <label class="o_project_gantt_zoom" title="Zoom">
+                            <i class="fa fa-minus" aria-hidden="true"/>
+                            <input type="range"
+                                   min="48"
+                                   max="180"
+                                   step="4"
+                                   t-att-value="state.cellWidth"
+                                   t-on-input="onZoomInput"
+                                   aria-label="Zoom"/>
+                            <i class="fa fa-plus" aria-hidden="true"/>
+                        </label>
+                        <button type="button" class="btn btn-light" t-on-click="expandAll" title="Expandir todo" aria-label="Expandir todo">
+                            <i class="fa fa-angle-double-down" aria-hidden="true"/>
+                        </button>
+                        <button type="button" class="btn btn-light" t-on-click="collapseAll" title="Contraer todo" aria-label="Contraer todo">
+                            <i class="fa fa-angle-double-up" aria-hidden="true"/>
+                        </button>
+                        <button type="button" class="btn btn-light" t-on-click="toggleFullscreen" t-att-title="isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'" aria-label="Pantalla completa">
+                            <i t-att-class="isFullscreen ? 'fa fa-compress' : 'fa fa-expand'" aria-hidden="true"/>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="o_project_gantt_board" role="table" aria-label="Cronograma de proyecto">
+                    <div class="o_project_gantt_header_row" role="row">
+                        <div class="o_project_gantt_fixed_header o_project_gantt_activity_header" role="columnheader">Actividad</div>
+                        <div class="o_project_gantt_fixed_header o_project_gantt_start_header" role="columnheader">Inicio</div>
+                        <div class="o_project_gantt_fixed_header o_project_gantt_end_header" role="columnheader">Fin</div>
+                        <div class="o_project_gantt_fixed_header o_project_gantt_duration_header" role="columnheader">Duración</div>
+                        <div class="o_project_gantt_timeline_header"
+                             t-att-style="timelineStyle"
+                             role="columnheader"
+                             aria-label="Gantt">
+                            <div class="o_project_gantt_timeline_groups" t-att-style="gridTemplateStyle">
+                                <div t-foreach="columnGroups"
+                                     t-as="group"
+                                     t-key="group.key"
+                                     class="o_project_gantt_timeline_group"
+                                     t-att-style="'grid-column: span ' + group.span">
+                                    <t t-out="group.label"/>
+                                </div>
+                            </div>
+                            <div class="o_project_gantt_timeline_columns" t-att-style="gridTemplateStyle">
+                                <div t-foreach="columns"
+                                     t-as="column"
+                                     t-key="column.key"
+                                     class="o_project_gantt_timeline_column_header">
+                                    <t t-out="column.label"/>
+                                </div>
+                            </div>
+                            <div t-if="todayPosition !== false"
+                                 class="o_project_gantt_today_line o_project_gantt_today_line--header"
+                                 t-att-style="'left: ' + todayPosition + 'px'"
+                                 title="Hoy"/>
+                        </div>
+                    </div>
+
+                    <div t-if="!hasVisibleRows" class="o_project_gantt_no_rows">
+                        <i class="fa fa-tasks" aria-hidden="true"/>
+                        <span>No hay actividades activas para mostrar con este filtro.</span>
+                    </div>
+
+                    <div t-foreach="visibleRows"
+                         t-as="row"
+                         t-key="row.id"
+                         t-att-class="rowClass(row)"
+                         t-on-click="() => this.openTask(row)"
+                         role="row">
+                        <div class="o_project_gantt_fixed_cell o_project_gantt_activity_cell"
+                             t-att-style="'--project-gantt-depth: ' + row.depth"
+                             role="cell">
+                            <button t-if="row.has_children"
+                                    type="button"
+                                    class="o_project_gantt_caret"
+                                    t-on-click.stop="() => this.toggleRow(row.id)"
+                                    t-att-title="state.collapsed[row.id] ? 'Expandir' : 'Contraer'"
+                                    aria-label="Expandir o contraer">
+                                <i t-att-class="state.collapsed[row.id] ? 'fa fa-chevron-right' : 'fa fa-chevron-down'" aria-hidden="true"/>
+                            </button>
+                            <span t-else="" class="o_project_gantt_caret_placeholder"/>
+                            <i t-if="row.has_children"
+                               class="fa fa-folder o_project_gantt_folder"
+                               t-att-style="'color: ' + colorForRow(row)"
+                               aria-hidden="true"/>
+                            <span t-else=""
+                                  class="o_project_gantt_leaf_marker"
+                                  t-att-style="'background-color: ' + colorForRow(row)"/>
+                            <span class="o_project_gantt_activity_name" t-out="row.name"/>
+                        </div>
+                        <div t-att-class="'o_project_gantt_fixed_cell o_project_gantt_date_cell o_project_gantt_start_cell ' + dateCellClass(row.start_date)" role="cell">
+                            <t t-out="formatDate(row.start_date)"/>
+                        </div>
+                        <div t-att-class="'o_project_gantt_fixed_cell o_project_gantt_date_cell o_project_gantt_end_cell ' + dateCellClass(row.end_date)" role="cell">
+                            <t t-out="formatDate(row.end_date)"/>
+                        </div>
+                        <div t-att-class="'o_project_gantt_fixed_cell o_project_gantt_duration_cell ' + dateCellClass(row.duration_days)" role="cell">
+                            <t t-out="formatDuration(row.duration_days)"/>
+                        </div>
+                        <div class="o_project_gantt_timeline_cell" t-att-style="timelineStyle" role="cell">
+                            <div class="o_project_gantt_timeline_grid" t-att-style="gridTemplateStyle">
+                                <span t-foreach="columns" t-as="column" t-key="column.key" class="o_project_gantt_grid_cell"/>
+                            </div>
+                            <div t-if="todayPosition !== false"
+                                 class="o_project_gantt_today_line"
+                                 t-att-style="'left: ' + todayPosition + 'px'"
+                                 aria-hidden="true"/>
+                            <button t-if="barGeometry(row)"
+                                    type="button"
+                                    t-att-class="'o_project_gantt_bar ' + (row.has_children ? 'is-parent' : '')"
+                                    t-att-style="barStyle(row)"
+                                    t-on-click.stop="() => this.openTask(row)"
+                                    t-att-title="row.name"
+                                    t-att-aria-label="'Abrir ' + row.name"/>
+                        </div>
+                    </div>
+
+                    <div t-if="total" class="o_project_gantt_total_row" role="row">
+                        <div class="o_project_gantt_fixed_cell o_project_gantt_activity_cell" role="cell">
+                            <strong>Total del proyecto</strong>
+                        </div>
+                        <div class="o_project_gantt_fixed_cell o_project_gantt_date_cell o_project_gantt_start_cell" role="cell">
+                            <t t-out="formatDate(total.start_date)"/>
+                        </div>
+                        <div class="o_project_gantt_fixed_cell o_project_gantt_date_cell o_project_gantt_end_cell" role="cell">
+                            <t t-out="formatDate(total.end_date)"/>
+                        </div>
+                        <div class="o_project_gantt_fixed_cell o_project_gantt_duration_cell" role="cell">
+                            <t t-out="formatDuration(total.duration_days)"/>
+                        </div>
+                        <div class="o_project_gantt_timeline_cell" t-att-style="timelineStyle" role="cell">
+                            <div class="o_project_gantt_timeline_grid" t-att-style="gridTemplateStyle">
+                                <span t-foreach="columns" t-as="column" t-key="column.key" class="o_project_gantt_grid_cell"/>
+                            </div>
+                            <div t-if="totalRow and barGeometry(totalRow)"
+                                 class="o_project_gantt_total_bar"
+                                 t-att-style="barStyle(totalRow)"
+                                 aria-hidden="true"/>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </t>
+</templates>

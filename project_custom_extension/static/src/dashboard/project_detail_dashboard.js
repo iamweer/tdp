@@ -346,6 +346,19 @@ export class ProjectDetailDashboard extends Component {
         });
     }
 
+    openProjectGantt() {
+        if (!this.project) {
+            return;
+        }
+        return this.action.doAction({
+            type: "ir.actions.client",
+            name: _t("Cronograma de proyecto"),
+            tag: "project_custom_extension.ProjectGantt",
+            target: "current",
+            context: { project_id: this.project.id },
+        });
+    }
+
     openTask(task) {
         return this.action.doAction({
             type: "ir.actions.act_window",

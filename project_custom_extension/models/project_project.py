@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 
 from lxml import etree
 
@@ -331,6 +331,259 @@ class ProjectProject(models.Model):
         except (TypeError, ValueError):
             return None
         return value if value > 0 else None
+
+    @api.model
+    def _empty_project_gantt_data(self):
+        return {
+            "project": False,
+            "rows": [],
+            "total": {
+                "start_date": False,
+                "end_date": False,
+                "duration_days": False,
+            },
+            "timeline": {
+                "start_date": False,
+                "end_date": False,
+                "today": fields.Date.to_string(fields.Date.context_today(self)),
+            },
+        }
+
+    @api.model
+    def _project_gantt_date(self, value, label):
+        if value in (False, None, ""):
+            return False
+        try:
+            result = fields.Date.to_date(value)
+        except (TypeError, ValueError):
+            raise ValidationError(
+                _("La fecha de %(label)s no es válida.", label=label)
+            )
+        if not result:
+            raise ValidationError(
+                _("La fecha de %(label)s no es válida.", label=label)
+            )
+        return result
+
+    @api.model
+    def _project_gantt_task_date(self, value):
+        if not value:
+            return False
+        if isinstance(value, date) and not isinstance(value, datetime):
+            return value
+        timestamp = fields.Datetime.to_datetime(value)
+        return fields.Datetime.context_timestamp(self, timestamp).date()
+
+    @api.model
+    def _project_gantt_duration(self, start_date, end_date):
+        if not start_date or not end_date:
+            return False
+        return (end_date - start_date).days + 1
+
+    @api.model
+    def _project_gantt_next_month(self, value):
+        month_start = value.replace(day=1)
+        return (month_start + timedelta(days=32)).replace(day=1)
+
+    def action_open_project_gantt(self):
+        self.ensure_one()
+        self.check_access("read")
+        return {
+            "type": "ir.actions.client",
+            "name": _("Cronograma de proyecto"),
+            "tag": "project_custom_extension.ProjectGantt",
+            "target": "current",
+            "context": {"project_id": self.id},
+        }
+
+    @api.model
+    def get_project_gantt_data(
+        self,
+        project_id=False,
+        filter_start_date=False,
+        filter_end_date=False,
+    ):
+        """Return the accessible active tasks for the project Gantt."""
+        project_id = self._dashboard_integer_id(project_id)
+        if project_id is None or not project_id:
+            return self._empty_project_gantt_data()
+
+        filter_start_date = self._project_gantt_date(
+            filter_start_date,
+            _("inicio"),
+        )
+        filter_end_date = self._project_gantt_date(
+            filter_end_date,
+            _("fin"),
+        )
+        if (
+            filter_start_date
+            and filter_end_date
+            and filter_start_date > filter_end_date
+        ):
+            raise ValidationError(
+                _("La fecha de inicio no puede ser posterior a la fecha fin.")
+            )
+
+        Project = self.env["project.project"]
+        Task = self.env["project.task"]
+        project = Project.search([
+            ("id", "=", project_id),
+            ("active", "=", True),
+        ], limit=1)
+        if not project:
+            return self._empty_project_gantt_data()
+
+        tasks = Task.search([
+            ("project_id", "=", project.id),
+            ("active", "=", True),
+        ], order="sequence, name, id")
+        task_by_id = {task.id: task for task in tasks}
+        parent_by_id = {}
+        children_by_parent = {}
+        task_dates = {}
+        for task in tasks:
+            parent_id = task.parent_id.id if task.parent_id.id in task_by_id else False
+            parent_by_id[task.id] = parent_id
+            children_by_parent.setdefault(parent_id, []).append(task)
+            task_dates[task.id] = (
+                self._project_gantt_task_date(task.planned_date_begin),
+                self._project_gantt_task_date(task.date_deadline),
+            )
+
+        def is_in_requested_range(task_id):
+            if not filter_start_date and not filter_end_date:
+                return True
+            start_date, end_date = task_dates[task_id]
+            if not start_date or not end_date:
+                return True
+            if filter_start_date and end_date < filter_start_date:
+                return False
+            if filter_end_date and start_date > filter_end_date:
+                return False
+            return True
+
+        visible_ids = {
+            task_id for task_id in task_by_id if is_in_requested_range(task_id)
+        }
+        for task_id in tuple(visible_ids):
+            parent_id = parent_by_id[task_id]
+            while parent_id and parent_id not in visible_ids:
+                visible_ids.add(parent_id)
+                parent_id = parent_by_id[parent_id]
+
+        task_start_dates = [
+            dates[0] for dates in task_dates.values() if dates[0]
+        ]
+        task_end_dates = [
+            dates[1] for dates in task_dates.values() if dates[1]
+        ]
+        if project.date_start and project.date:
+            full_start_date = project.date_start
+            full_end_date = project.date
+        else:
+            start_candidates = task_start_dates + (
+                [project.date_start] if project.date_start else []
+            )
+            end_candidates = task_end_dates + (
+                [project.date] if project.date else []
+            )
+            full_start_date = min(start_candidates) if start_candidates else False
+            full_end_date = max(end_candidates) if end_candidates else False
+        if full_start_date and not full_end_date:
+            full_end_date = full_start_date
+        elif full_end_date and not full_start_date:
+            full_start_date = full_end_date
+
+        today = fields.Date.context_today(self)
+        fallback_start_date = today.replace(day=1)
+        fallback_end_date = self._project_gantt_next_month(
+            fallback_start_date
+        ) - timedelta(days=1)
+        timeline_start_date = (
+            filter_start_date
+            or full_start_date
+            or filter_end_date
+            or fallback_start_date
+        )
+        timeline_end_date = (
+            filter_end_date
+            or full_end_date
+            or filter_start_date
+            or fallback_end_date
+        )
+        if timeline_start_date > timeline_end_date:
+            if filter_end_date and not filter_start_date:
+                timeline_start_date = timeline_end_date
+            else:
+                timeline_end_date = timeline_start_date
+
+        root_color_indexes = {}
+        rows = []
+
+        def append_rows(parent_id=False, depth=0, root_id=False):
+            for task in children_by_parent.get(parent_id, []):
+                if task.id not in visible_ids:
+                    continue
+                current_root_id = root_id or task.id
+                if current_root_id not in root_color_indexes:
+                    root_task = task_by_id[current_root_id]
+                    root_color_indexes[current_root_id] = (
+                        root_task.color
+                        if root_task.color is not False
+                        else len(root_color_indexes)
+                    )
+                start_date, end_date = task_dates[task.id]
+                visible_children = [
+                    child for child in children_by_parent.get(task.id, [])
+                    if child.id in visible_ids
+                ]
+                rows.append({
+                    "id": task.id,
+                    "name": task.display_name,
+                    "parent_id": task.parent_id.id if task.parent_id.id in task_by_id else False,
+                    "depth": depth,
+                    "has_children": bool(visible_children),
+                    "sequence": task.sequence,
+                    "start_date": fields.Date.to_string(start_date) if start_date else False,
+                    "end_date": fields.Date.to_string(end_date) if end_date else False,
+                    "duration_days": self._project_gantt_duration(start_date, end_date),
+                    "root_id": current_root_id,
+                    "color_index": root_color_indexes[current_root_id],
+                })
+                append_rows(task.id, depth + 1, current_root_id)
+
+        append_rows()
+        full_duration = self._project_gantt_duration(
+            full_start_date,
+            full_end_date,
+        )
+        return {
+            "project": {
+                "id": project.id,
+                "name": project.display_name,
+                "customer_name": project.partner_id.display_name or _(
+                    "Sin cliente"
+                ),
+                "start_date": fields.Date.to_string(project.date_start)
+                if project.date_start else False,
+                "end_date": fields.Date.to_string(project.date)
+                if project.date else False,
+            },
+            "rows": rows,
+            "total": {
+                "start_date": fields.Date.to_string(full_start_date)
+                if full_start_date else False,
+                "end_date": fields.Date.to_string(full_end_date)
+                if full_end_date else False,
+                "duration_days": full_duration,
+            },
+            "timeline": {
+                "start_date": fields.Date.to_string(timeline_start_date),
+                "end_date": fields.Date.to_string(timeline_end_date),
+                "today": fields.Date.to_string(today),
+            },
+        }
 
     @api.model
     def get_project_detail_dashboard_data(self, project_id=False, partner_id=False):

@@ -343,11 +343,13 @@ class TestProjectRoleAccess(TransactionCase):
         detail_menu = self.env.ref(
             "project_custom_extension.menu_project_detail_dashboard"
         )
+        gantt_menu = self.env.ref("project_custom_extension.menu_project_gantt")
         analysis_menu = self.env.ref("project.menu_project_report_task_analysis")
 
         self.assertIn(client_group, project_menu.groups_id)
         self.assertIn(client_group, dashboard_menu.groups_id)
         self.assertIn(client_group, detail_menu.groups_id)
+        self.assertIn(client_group, gantt_menu.groups_id)
         self.assertNotIn(client_group, analysis_menu.groups_id)
 
         dashboard_data = self.Project.with_user(
@@ -365,6 +367,29 @@ class TestProjectRoleAccess(TransactionCase):
             self.client_user,
         ).get_project_detail_dashboard_filters()
         self.assertIn(self.other_customer.id, detail_filters["customer_ids"])
+
+    def test_gantt_data_uses_the_current_user_project_and_task_rules(self):
+        client_data = self.Project.with_user(
+            self.client_user,
+        ).get_project_gantt_data(self.client_project.id)
+        foreign_data = self.Project.with_user(
+            self.client_user,
+        ).get_project_gantt_data(self.foreign_project.id)
+        archived_data = self.Project.with_user(
+            self.client_user,
+        ).get_project_gantt_data(self.archived_project.id)
+        manager_data = self.Project.with_user(
+            self.manager,
+        ).get_project_gantt_data(self.foreign_project.id)
+
+        client_task_ids = {row["id"] for row in client_data["rows"]}
+        manager_task_ids = {row["id"] for row in manager_data["rows"]}
+        self.assertEqual(client_data["project"]["id"], self.client_project.id)
+        self.assertIn(self.client_assigned_task.id, client_task_ids)
+        self.assertIn(self.client_context_task.id, client_task_ids)
+        self.assertFalse(foreign_data["project"])
+        self.assertFalse(archived_data["project"])
+        self.assertIn(self.foreign_task.id, manager_task_ids)
 
         project_form = etree.fromstring(self.Project.with_user(
             self.client_user,
