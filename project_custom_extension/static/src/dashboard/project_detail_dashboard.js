@@ -33,6 +33,10 @@ export class ProjectDetailDashboard extends Component {
             selectedCustomer: false,
             selectedProject: false,
             data: false,
+            activityScope: "all",
+            sprintFilter: "all",
+            sprintData: false,
+            sprintError: false,
             loading: false,
             error: false,
         });
@@ -42,6 +46,7 @@ export class ProjectDetailDashboard extends Component {
             write: false,
         };
         this.requestSequence = 0;
+        this.sprintRequestSequence = 0;
         onWillStart(() => this.loadFilters());
     }
 
@@ -78,7 +83,9 @@ export class ProjectDetailDashboard extends Component {
     }
 
     get activityStates() {
-        const states = this.state.data?.activities_by_state || [];
+        const states = this.state.data?.activity_states_by_scope?.[
+            this.state.activityScope
+        ] || this.state.data?.activities_by_state || [];
         const total = states.reduce((sum, state) => sum + state.count, 0);
         return states.map((state, index) => ({
             ...state,
@@ -96,14 +103,54 @@ export class ProjectDetailDashboard extends Component {
         if (!projectId) {
             return false;
         }
+        const scopeDomain = this.state.activityScope === "main"
+            ? [["parent_id", "=", false]]
+            : this.state.activityScope === "subtasks"
+                ? [["parent_id", "!=", false]]
+                : [];
         return {
             title: _t("Actividades del proyecto"),
             model: "project.task",
             domain: [
                 ["project_id", "=", projectId],
                 ["active", "=", true],
+                ...scopeDomain,
             ],
         };
+    }
+
+    get sprintSummary() {
+        const sprints = this.state.data?.sprints || [];
+        if (this.state.sprintFilter === "all") {
+            const summary = { total: 0, states: new Map() };
+            for (const sprint of sprints) {
+                summary.total += sprint.total || 0;
+                for (const state of sprint.states || []) {
+                    const stateSummary = summary.states.get(state.key) || {
+                        key: state.key,
+                        label: state.label,
+                        count: 0,
+                    };
+                    stateSummary.count += state.count;
+                    summary.states.set(state.key, stateSummary);
+                }
+            }
+            return { total: summary.total, states: [...summary.states.values()] };
+        }
+        const sprint = sprints.find(
+            (item) => String(item.id || "none") === this.state.sprintFilter
+        );
+        return sprint
+            ? { total: sprint.total || 0, states: sprint.states || [] }
+            : { total: 0, states: [] };
+    }
+
+    get sprintTasks() {
+        return this.state.sprintData?.tasks || [];
+    }
+
+    get sprintTaskCount() {
+        return this.state.sprintData?.count || 0;
     }
 
     get activityChartStyle() {
@@ -243,8 +290,10 @@ export class ProjectDetailDashboard extends Component {
 
     clearProject() {
         this.requestSequence += 1;
+        this.sprintRequestSequence += 1;
         this.state.selectedProject = false;
         this.state.data = false;
+        this.state.sprintData = false;
         this.state.error = false;
         this.state.loading = false;
         this.storeFilters(this.state.selectedCustomer?.id || false, false);
@@ -257,12 +306,16 @@ export class ProjectDetailDashboard extends Component {
     }
 
     async onProjectUpdate(records) {
+        this.sprintRequestSequence += 1;
         this.state.selectedProject = records?.[0] || false;
         this.storeFilters(
             this.state.selectedCustomer?.id || false,
             this.state.selectedProject?.id || false
         );
         this.state.data = false;
+        this.state.sprintData = false;
+        this.state.activityScope = "all";
+        this.state.sprintFilter = "all";
         this.state.error = false;
         if (!this.state.selectedProject) {
             this.requestSequence += 1;
@@ -294,6 +347,9 @@ export class ProjectDetailDashboard extends Component {
             }
             if (data.project) {
                 this.state.data = data;
+                this.state.activityScope = "all";
+                this.state.sprintFilter = "all";
+                await this.loadSprintData(projectId, "all");
             } else {
                 this.state.selectedProject = false;
                 this.state.data = false;
@@ -311,6 +367,43 @@ export class ProjectDetailDashboard extends Component {
         } finally {
             if (requestSequence === this.requestSequence) {
                 this.state.loading = false;
+            }
+        }
+    }
+
+    onActivityScopeChange(event) {
+        this.state.activityScope = event.target.value;
+    }
+
+    async onSprintFilterChange(event) {
+        this.state.sprintFilter = event.target.value;
+        if (this.project) {
+            await this.loadSprintData(this.project.id, this.state.sprintFilter);
+        }
+    }
+
+    async loadSprintData(projectId, sprintFilter) {
+        const requestSequence = ++this.sprintRequestSequence;
+        this.state.sprintError = false;
+        try {
+            const data = await this.orm.call(
+                "project.project",
+                "get_project_sprint_dashboard_data",
+                [],
+                { project_id: projectId, sprint_filter: sprintFilter, limit: 20 }
+            );
+            if (requestSequence !== this.sprintRequestSequence) {
+                return;
+            }
+            this.state.sprintData = {
+                count: data.count || 0,
+                tasks: data.tasks || [],
+                domain: data.domain || [],
+            };
+        } catch {
+            if (requestSequence === this.sprintRequestSequence) {
+                this.state.sprintError = true;
+                this.state.sprintData = { count: 0, tasks: [], domain: [] };
             }
         }
     }
@@ -356,6 +449,17 @@ export class ProjectDetailDashboard extends Component {
             tag: "project_custom_extension.ProjectGantt",
             target: "current",
             context: { project_id: this.project.id },
+        });
+    }
+
+    openAllSprintTasks() {
+        if (!this.project || !this.state.sprintData?.domain) {
+            return;
+        }
+        return this.openMetric({
+            title: _t("Actividades del Sprint"),
+            model: "project.task",
+            domain: this.state.sprintData.domain,
         });
     }
 

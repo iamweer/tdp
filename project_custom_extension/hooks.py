@@ -104,3 +104,4 @@ def post_init_hook(env):
     )
     _hide_existing_subtasks(env)
     configure_project_security(env)
+    env["project.project"]._ensure_warranty_automation_activation_date()

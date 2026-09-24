@@ -171,6 +171,30 @@
     }
 }
 
+.o_project_detail_dashboard_inline_filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    > span {
+        color: rgba(255, 255, 255, 0.82);
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    select {
+        max-width: 210px;
+        min-height: 32px;
+        padding: 4px 28px 4px 9px;
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        border-radius: 6px;
+        background: #fff;
+        color: var(--project-detail-ink);
+        font-size: 0.78rem;
+    }
+}
+
 .o_project_detail_dashboard_status {
     padding: 4px 10px;
     border-radius: 999px;
@@ -275,6 +299,111 @@
     min-height: 208px;
     padding: 18px 24px;
     gap: 28px;
+}
+
+.o_project_detail_dashboard_sprint_body {
+    padding: 16px 22px 18px;
+}
+
+.o_project_detail_dashboard_sprint_metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    margin-bottom: 8px;
+    border-bottom: 1px solid #edf0f5;
+
+    > div {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-width: 0;
+        padding: 8px 10px;
+        gap: 8px;
+
+        &:not(:last-child) {
+            border-right: 1px solid #edf0f5;
+        }
+    }
+
+    strong {
+        color: var(--project-detail-blue-dark);
+        font-size: 1.15rem;
+    }
+
+    span {
+        color: var(--project-detail-muted);
+        font-size: 0.75rem;
+    }
+}
+
+.o_project_detail_dashboard_sprint_list {
+    display: grid;
+
+    button {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        min-width: 0;
+        padding: 9px 2px;
+        border: 0;
+        border-bottom: 1px solid #edf0f5;
+        background: #fff;
+        color: var(--project-detail-ink);
+        gap: 12px;
+        text-align: left;
+
+        &:hover .o_project_detail_dashboard_sprint_task_name strong {
+            color: var(--project-detail-blue);
+        }
+    }
+}
+
+.o_project_detail_dashboard_sprint_task_name {
+    display: grid;
+    min-width: 0;
+    flex: 1 1 auto;
+    gap: 2px;
+
+    strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    small {
+        color: var(--project-detail-muted);
+        font-size: 0.7rem;
+    }
+}
+
+.o_project_detail_dashboard_sprint_priority {
+    flex: 0 0 auto;
+    color: var(--project-detail-blue-dark);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.o_project_detail_dashboard_sprint_priority--empty,
+.o_project_detail_dashboard_sprint_state {
+    color: var(--project-detail-muted);
+    font-size: 0.7rem;
+    font-weight: 400;
+}
+
+.o_project_detail_dashboard_sprint_more {
+    display: block;
+    margin: 10px auto 0;
+    border: 0;
+    background: transparent;
+    color: var(--project-detail-blue);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.o_project_detail_dashboard_sprint_empty {
+    padding: 18px 0;
+    color: var(--project-detail-muted);
+    font-size: 0.84rem;
+    text-align: center;
 }
 
 .o_project_detail_dashboard_parent_progress_body {

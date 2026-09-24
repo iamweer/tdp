@@ -135,8 +135,11 @@
                             <div t-if="state.data.progress.mode === 'parents'"
                                  class="o_project_detail_dashboard_parent_progress_body">
                                 <div class="o_project_detail_dashboard_parent_progress_intro">
-                                    <strong>Avance por tarea padre</strong>
-                                    <span>Cada porcentaje se calcula con sus subtareas.</span>
+                                    <strong>Avance ponderado por fase</strong>
+                                    <span t-if="state.data.progress.percentage !== false">
+                                        Avance global: <t t-out="formatPercentage(state.data.progress.percentage)"/>%
+                                    </span>
+                                    <span t-else="">Planificación incompleta</span>
                                 </div>
                                 <div class="o_project_detail_dashboard_parent_progress">
                                     <button t-foreach="parentProgress"
@@ -151,7 +154,7 @@
                                                 <t t-out="parentTask.completed_subtasks"/>
                                                 /
                                                 <t t-out="parentTask.total_subtasks"/>
-                                                subtareas
+                                                actividades finales · peso <t t-out="parentTask.weight_percentage"/>%
                                             </small>
                                         </span>
                                         <span class="o_project_detail_dashboard_parent_progress_track">
@@ -171,10 +174,12 @@
                                         t-att-style="progressRingStyle"
                                         t-on-click="() => this.openMetric(progressMetrics[0])">
                                     <div>
-                                        <strong>
+                                        <strong t-if="state.data.progress.percentage !== false">
                                             <t t-out="formatPercentage(state.data.progress.percentage)"/>%
                                         </strong>
-                                        <span>Avance real</span>
+                                        <strong t-else="">—</strong>
+                                        <span t-if="state.data.progress.percentage !== false">Ejecución</span>
+                                        <span t-else="">Planificación incompleta</span>
                                     </div>
                                 </button>
                                 <div class="o_project_detail_dashboard_progress_metrics">
@@ -198,6 +203,16 @@
                                     <i class="fa fa-pie-chart" aria-hidden="true"/>
                                     <h2>Actividades por Estado</h2>
                                 </div>
+                                <label class="o_project_detail_dashboard_inline_filter" for="project_detail_activity_scope">
+                                    <span>Mostrar</span>
+                                    <select id="project_detail_activity_scope"
+                                            t-att-value="state.activityScope"
+                                            t-on-change="onActivityScopeChange">
+                                        <option value="all">Todas</option>
+                                        <option value="main">Tareas principales</option>
+                                        <option value="subtasks">Subtareas</option>
+                                    </select>
+                                </label>
                             </header>
                             <div t-if="activityStates.length" class="o_project_detail_dashboard_states_body">
                                 <button type="button"
@@ -227,6 +242,68 @@
                             <div t-else="" class="o_project_detail_dashboard_empty o_project_detail_dashboard_empty--panel">
                                 <i class="fa fa-tasks" aria-hidden="true"/>
                                 <p>No hay actividades para este proyecto.</p>
+                            </div>
+                        </section>
+
+                        <section class="o_project_detail_dashboard_panel o_project_detail_dashboard_sprints">
+                            <header class="o_project_detail_dashboard_panel_header">
+                                <div>
+                                    <i class="fa fa-list-ol" aria-hidden="true"/>
+                                    <h2>Seguimiento por Sprint</h2>
+                                </div>
+                                <label class="o_project_detail_dashboard_inline_filter" for="project_detail_sprint">
+                                    <span>Sprint</span>
+                                    <select id="project_detail_sprint"
+                                            t-att-value="state.sprintFilter"
+                                            t-on-change="onSprintFilterChange">
+                                        <option value="all">Todos</option>
+                                        <option t-foreach="state.data.sprints"
+                                                t-as="sprint"
+                                                t-key="sprint.id || 'none'"
+                                                t-att-value="sprint.id || 'none'"
+                                                t-out="sprint.name"/>
+                                    </select>
+                                </label>
+                            </header>
+                            <div class="o_project_detail_dashboard_sprint_body">
+                                <div class="o_project_detail_dashboard_sprint_metrics">
+                                    <div><strong t-out="sprintSummary.total"/><span>Actividades</span></div>
+                                    <div t-foreach="sprintSummary.states"
+                                         t-as="state"
+                                         t-key="state.key">
+                                        <strong t-out="state.count"/>
+                                        <span t-out="state.label"/>
+                                    </div>
+                                </div>
+                                <div t-if="state.sprintError" class="o_project_detail_dashboard_sprint_empty" role="alert">
+                                    No se pudo cargar el detalle de los Sprints.
+                                </div>
+                                <div t-elif="sprintTasks.length" class="o_project_detail_dashboard_sprint_list">
+                                    <button t-foreach="sprintTasks"
+                                            t-as="task"
+                                            t-key="task.id"
+                                            type="button"
+                                            t-on-click="() => this.openTask(task)">
+                                        <span class="o_project_detail_dashboard_sprint_task_name">
+                                            <strong t-out="task.name"/>
+                                            <small t-out="task.sprint_name"/>
+                                        </span>
+                                        <span t-attf-class="o_project_detail_dashboard_sprint_priority #{task.hierarchical_priority ? '' : 'o_project_detail_dashboard_sprint_priority--empty'}">
+                                            <t t-if="task.hierarchical_priority">P<t t-out="task.hierarchical_priority"/></t>
+                                            <t t-else="">Sin prioridad</t>
+                                        </span>
+                                        <span class="o_project_detail_dashboard_sprint_state" t-out="task.state_label"/>
+                                    </button>
+                                </div>
+                                <div t-elif="!state.sprintError" class="o_project_detail_dashboard_sprint_empty">
+                                    No hay actividades para esta selección.
+                                </div>
+                                <button t-if="sprintTaskCount &gt; sprintTasks.length"
+                                        type="button"
+                                        class="o_project_detail_dashboard_sprint_more"
+                                        t-on-click="openAllSprintTasks">
+                                    Ver las <t t-out="sprintTaskCount"/> actividades
+                                </button>
                             </div>
                         </section>
 

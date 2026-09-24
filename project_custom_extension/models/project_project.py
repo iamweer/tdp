@@ -36,6 +36,12 @@ DASHBOARD_STATUS_ORDER = {
     "on_track": 4,
 }
 
+WARRANTY_ACTIVATION_PARAMETER = (
+    "project_custom_extension.warranty_automation_activation_date"
+)
+WARRANTY_VICTOR_LOGIN = "victor.castano@tdpsolutions.co"
+WARRANTY_TIMEZONE = "America/Bogota"
+
 
 class ProjectProject(models.Model):
     _inherit = "project.project"
@@ -106,6 +112,12 @@ class ProjectProject(models.Model):
         string="Periodo de garantía",
         compute="_compute_warranty_period_display",
     )
+    warranty_auto_closed_on = fields.Date(
+        string="Cierre automático por garantía",
+        readonly=True,
+        copy=False,
+        tracking=True,
+    )
 
     @api.depends("warranty_start_date", "warranty_end_date")
     def _compute_warranty_period_display(self):
@@ -142,6 +154,187 @@ class ProjectProject(models.Model):
                 raise ValidationError(
                     _("El inicio de la garantía no puede ser posterior a su fin.")
                 )
+
+    @api.model
+    def _get_task_date_in_context(self, value):
+        if not value:
+            return False
+        timestamp = fields.Datetime.to_datetime(value)
+        return fields.Datetime.context_timestamp(self, timestamp).date()
+
+    @api.model
+    def _get_project_execution_progress(self, project, tasks=None):
+        """Compute planned progress from dated top-level phases and leaf tasks."""
+        if tasks is None:
+            tasks = self.env["project.task"].search([
+                ("project_id", "=", project.id),
+                ("active", "=", True),
+            ])
+        tasks = tasks.filtered(
+            lambda task: task.project_id == project and task.active
+        )
+        children_by_parent = {}
+        for task in tasks:
+            if task.parent_id:
+                children_by_parent.setdefault(task.parent_id.id, []).append(task)
+        phases = tasks.filtered(lambda task: not task.parent_id)
+        if not phases:
+            return {"percentage": False, "phases": []}
+
+        phase_values = []
+        for phase in phases:
+            start_date = self._get_task_date_in_context(phase.planned_date_begin)
+            end_date = self._get_task_date_in_context(phase.date_deadline)
+            if not start_date or not end_date or start_date > end_date:
+                return {"percentage": False, "phases": []}
+
+            duration_days = (end_date - start_date).days + 1
+            leaf_tasks = []
+            pending = list(children_by_parent.get(phase.id, []))
+            while pending:
+                current = pending.pop()
+                children = children_by_parent.get(current.id, [])
+                if children:
+                    pending.extend(children)
+                else:
+                    leaf_tasks.append(current)
+            if not leaf_tasks:
+                leaf_tasks = [phase]
+            completed_count = sum(task.state == "1_done" for task in leaf_tasks)
+            phase_percentage = completed_count / len(leaf_tasks)
+            phase_values.append({
+                "task": phase,
+                "duration_days": duration_days,
+                "completed_count": completed_count,
+                "total_count": len(leaf_tasks),
+                "percentage": phase_percentage,
+            })
+
+        total_days = sum(phase["duration_days"] for phase in phase_values)
+        if not total_days:
+            return {"percentage": False, "phases": []}
+        percentage = sum(
+            phase["duration_days"] * phase["percentage"]
+            for phase in phase_values
+        ) * 100 / total_days
+        return {
+            "percentage": round(percentage, 1),
+            "phases": phase_values,
+        }
+
+    @api.model
+    def _get_project_execution_progress_by_project(self, projects):
+        if not projects:
+            return {}
+        tasks = self.env["project.task"].search([
+            ("project_id", "in", projects.ids),
+            ("active", "=", True),
+        ])
+        tasks_by_project = {}
+        for task in tasks:
+            tasks_by_project.setdefault(task.project_id.id, self.env["project.task"])
+            tasks_by_project[task.project_id.id] |= task
+        return {
+            project.id: self._get_project_execution_progress(
+                project,
+                tasks_by_project.get(project.id, self.env["project.task"]),
+            )
+            for project in projects
+        }
+
+    @api.model
+    def _ensure_warranty_automation_activation_date(self):
+        parameters = self.env["ir.config_parameter"]
+        if not parameters._get_param(WARRANTY_ACTIVATION_PARAMETER):
+            parameters.set_param(
+                WARRANTY_ACTIVATION_PARAMETER,
+                fields.Date.to_string(fields.Date.context_today(
+                    self.with_context(tz=WARRANTY_TIMEZONE)
+                )),
+            )
+
+    @api.model
+    def _cron_close_projects_after_warranty(self):
+        """Close due projects and create one activity and email per recipient."""
+        if not self.env.su and not self.env.user.has_group(
+            "project.group_project_manager"
+        ):
+            raise AccessError(_("Solo un gerente puede ejecutar el cierre por garantía."))
+
+        self._ensure_warranty_automation_activation_date()
+        activation_date = fields.Date.to_date(
+            self.env["ir.config_parameter"]._get_param(
+                WARRANTY_ACTIVATION_PARAMETER
+            )
+        )
+        today = fields.Date.context_today(self.with_context(tz=WARRANTY_TIMEZONE))
+        projects = self.search([
+            ("active", "=", True),
+            ("warranty_end_date", ">=", activation_date),
+            ("warranty_end_date", "<=", today),
+            ("warranty_auto_closed_on", "=", False),
+        ])
+        if not projects:
+            return True
+
+        victor = self.env["res.users"].search(
+            [("login", "=", WARRANTY_VICTOR_LOGIN)],
+            limit=1,
+        )
+        activity_type = self.env.ref("mail.mail_activity_data_todo")
+        project_model_id = self.env["ir.model"]._get_id("project.project")
+        template = self.env.ref(
+            "project_custom_extension.mail_template_warranty_completion"
+        )
+
+        for project in projects:
+            recipients = (project.user_id | victor) if victor else project.user_id
+            missing = []
+            queued_email_addresses = set()
+            email_addresses = {}
+            if not project.user_id:
+                missing.append(_("gerente del proyecto sin asignar"))
+            for user in recipients:
+                email_address = user.email.strip() if user.email else False
+                email_addresses[user.id] = email_address
+                if not email_address:
+                    missing.append(user.display_name)
+
+            values = {"warranty_auto_closed_on": today}
+            if project.last_update_status != "done":
+                values["last_update_status"] = "done"
+            project.write(values)
+            for user in recipients:
+                self.env["mail.activity"].create({
+                    "activity_type_id": activity_type.id,
+                    "res_model_id": project_model_id,
+                    "res_id": project.id,
+                    "user_id": user.id,
+                    "date_deadline": today,
+                    "summary": _("Garantía finalizada"),
+                    "note": _(
+                        "La garantía del proyecto %(project)s finalizó el %(date)s.",
+                        project=project.display_name,
+                        date=fields.Date.to_string(today),
+                    ),
+                })
+                email_address = email_addresses.get(user.id)
+                if email_address and email_address.casefold() not in queued_email_addresses:
+                    template.send_mail(
+                        project.id,
+                        force_send=False,
+                        email_values={"email_to": email_address},
+                    )
+                    queued_email_addresses.add(email_address.casefold())
+            if not victor:
+                missing.append(WARRANTY_VICTOR_LOGIN)
+            if missing:
+                project.message_post(body=_(
+                    "Cierre automático ejecutado. No fue posible enviar el correo "
+                    "a: %(recipients)s.",
+                    recipients=", ".join(missing),
+                ))
+        return True
 
     @api.model
     def _get_dashboard_health_configuration(self):
@@ -188,7 +381,13 @@ class ProjectProject(models.Model):
         return configuration
 
     @api.model
-    def _get_dashboard_health(self, projects, task_domain, current_datetime):
+    def _get_dashboard_health(
+        self,
+        projects,
+        task_domain,
+        current_datetime,
+        progress_by_project=None,
+    ):
         if not projects:
             return {
                 "score": False,
@@ -203,11 +402,18 @@ class ProjectProject(models.Model):
 
         configuration = self._get_dashboard_health_configuration()
         project_count = len(projects)
-        progress_score = round(
-            sum(projects.mapped("task_completion_percentage"))
-            * 100
-            / project_count,
-            1,
+        progress_by_project = progress_by_project or (
+            self._get_project_execution_progress_by_project(projects)
+        )
+        planned_progress = [
+            progress_by_project[project.id]["percentage"]
+            for project in projects
+            if progress_by_project[project.id]["percentage"] is not False
+        ]
+        progress_score = (
+            round(sum(planned_progress) / len(planned_progress), 1)
+            if planned_progress
+            else False
         )
         status_score = round(
             sum(
@@ -238,15 +444,31 @@ class ProjectProject(models.Model):
             else 100.0
         )
 
+        weighted_components = [
+            (progress_score, configuration["progress_weight"]),
+            (status_score, configuration["status_weight"]),
+            (operations_score, configuration["operations_weight"]),
+        ]
+        weighted_components = [
+            (value, weight)
+            for value, weight in weighted_components
+            if value is not False
+        ]
+        effective_weight = sum(weight for _value, weight in weighted_components)
+        if not effective_weight:
+            weighted_components = [
+                (value, 1)
+                for value, _weight in weighted_components
+            ]
+            effective_weight = len(weighted_components)
         score = round(
-            (
-                progress_score * configuration["progress_weight"]
-                + status_score * configuration["status_weight"]
-                + operations_score * configuration["operations_weight"]
-            )
-            / 100
-        )
-        if score >= configuration["healthy_threshold"]:
+            sum(value * weight for value, weight in weighted_components)
+            / effective_weight
+        ) if effective_weight else False
+        if score is False:
+            label = _("Sin datos")
+            tone = "empty"
+        elif score >= configuration["healthy_threshold"]:
             label = _("Saludable")
             tone = "success"
         elif score >= configuration["attention_threshold"]:
@@ -316,6 +538,12 @@ class ProjectProject(models.Model):
             "project": False,
             "progress": False,
             "activities_by_state": [],
+            "activity_states_by_scope": {
+                "all": [],
+                "main": [],
+                "subtasks": [],
+            },
+            "sprints": [],
             "critical_activities": {
                 "count": 0,
                 "items": [],
@@ -656,48 +884,114 @@ class ProjectProject(models.Model):
             })
 
         main_tasks = Task.search(
-            progress_task_domain + [("parent_id", "=", False)],
+            [("project_id", "=", project.id), ("active", "=", True), ("parent_id", "=", False)],
             order="sequence, name, id",
         )
-        parent_tasks = main_tasks.filtered(lambda task: task.subtask_count > 0)
+        execution_progress = self._get_project_execution_progress(
+            project,
+            project_tasks,
+        )
+        phase_progress = execution_progress["phases"]
         parent_progress = [{
-            "id": task.id,
-            "name": task.display_name,
-            "percentage": round(task.subtask_completion_percentage * 100, 1),
-            "completed_subtasks": task.closed_subtask_count,
-            "total_subtasks": task.subtask_count,
+            "id": item["task"].id,
+            "name": item["task"].display_name,
+            "percentage": round(item["percentage"] * 100, 1),
+            "completed_subtasks": item["completed_count"],
+            "total_subtasks": item["total_count"],
+            "duration_days": item["duration_days"],
+            "weight_percentage": round(
+                item["duration_days"] * 100
+                / sum(value["duration_days"] for value in phase_progress),
+                1,
+            ) if phase_progress else 0,
             "model": "project.task",
             "domain": [
                 ("project_id", "=", project.id),
                 ("active", "=", True),
-                ("parent_id", "=", task.id),
+                ("id", "child_of", item["task"].id),
             ],
-        } for task in parent_tasks]
+        } for item in phase_progress]
         progress_mode = (
             "parents"
             if parent_progress and len(main_tasks) <= 10
             else "general"
         )
 
-        state_counts = {state: 0 for state in task_state_labels}
-        for task in project_tasks:
-            state_counts[task.state] = state_counts.get(task.state, 0) + 1
+        activity_states_by_scope = {}
+        for scope, scope_domain in (
+            ("all", []),
+            ("main", [("parent_id", "=", False)]),
+            ("subtasks", [("parent_id", "!=", False)]),
+        ):
+            scope_tasks = project_tasks.filtered(
+                lambda task: scope == "all"
+                or (scope == "main" and not task.parent_id)
+                or (scope == "subtasks" and bool(task.parent_id))
+            )
+            scope_counts = {}
+            for task in scope_tasks:
+                scope_counts[task.state] = scope_counts.get(task.state, 0) + 1
+            activity_states_by_scope[scope] = [
+                {
+                    "key": state,
+                    "label": label,
+                    "count": scope_counts.get(state, 0),
+                    "model": "project.task",
+                    "domain": [
+                        ("project_id", "=", project.id),
+                        ("active", "=", True),
+                        ("state", "=", state),
+                        *scope_domain,
+                    ],
+                }
+                for state, label in task_state_labels.items()
+                if scope_counts.get(state, 0)
+            ]
+        activities_by_state = activity_states_by_scope["all"]
 
-        activities_by_state = [
-            {
-                "key": state,
-                "label": label,
-                "count": state_counts.get(state, 0),
-                "model": "project.task",
-                "domain": [
-                    ("project_id", "=", project.id),
-                    ("active", "=", True),
-                    ("state", "=", state),
-                ],
+        sprints = self.env["project.sprint"].search(
+            [("project_id", "=", project.id)],
+            order="sequence, name, id",
+        )
+        sprint_summary = {
+            sprint.id: {"total": 0, "state_counts": {}}
+            for sprint in sprints
+        }
+        sprint_summary[False] = {"total": 0, "state_counts": {}}
+        for task in project_tasks:
+            summary = sprint_summary.setdefault(
+                task.sprint_id.id or False,
+                {"total": 0, "state_counts": {}},
+            )
+            summary["total"] += 1
+            summary["state_counts"][task.state] = (
+                summary["state_counts"].get(task.state, 0) + 1
+            )
+
+        def serialize_sprint_summary(sprint_id):
+            summary = sprint_summary[sprint_id]
+            return {
+                "total": summary["total"],
+                "states": [{
+                    "key": state,
+                    "label": task_state_labels.get(state, state),
+                    "count": summary["state_counts"][state],
+                } for state in task_state_labels
+                    if summary["state_counts"].get(state)],
             }
-            for state, label in task_state_labels.items()
-            if state_counts.get(state, 0)
-        ]
+
+        sprint_data = [{
+            "id": sprint.id,
+            "name": sprint.display_name,
+            "sequence": sprint.sequence,
+            **serialize_sprint_summary(sprint.id),
+        } for sprint in sprints]
+        sprint_data.append({
+            "id": False,
+            "name": _("Sin Sprint"),
+            "sequence": 2147483647,
+            **serialize_sprint_summary(False),
+        })
 
         current_datetime = fields.Datetime.to_string(fields.Datetime.now())
         critical_domain = [
@@ -739,7 +1033,8 @@ class ProjectProject(models.Model):
             },
             "progress": {
                 "mode": progress_mode,
-                "percentage": round(project.task_completion_percentage * 100, 1),
+                "percentage": execution_progress["percentage"],
+                "planned": execution_progress["percentage"] is not False,
                 "total_tasks": project.task_count,
                 "completed_tasks": project.task_count - project.open_task_count,
                 "open_tasks": project.open_task_count,
@@ -747,10 +1042,74 @@ class ProjectProject(models.Model):
                 "parent_tasks": parent_progress,
             },
             "activities_by_state": activities_by_state,
+            "activity_states_by_scope": activity_states_by_scope,
+            "sprints": sprint_data,
             "critical_activities": {
                 "count": Task.search_count(critical_domain),
                 "items": critical_items,
             },
+        }
+
+    @api.model
+    def get_project_sprint_dashboard_data(
+        self,
+        project_id=False,
+        sprint_filter="all",
+        limit=20,
+    ):
+        """Return a selected sprint's task preview and the full task domain."""
+        Project = self.env["project.project"]
+        Task = self.env["project.task"]
+        project_id = self._dashboard_integer_id(project_id)
+        if not project_id:
+            return {"count": 0, "tasks": [], "domain": []}
+        project = Project.search([
+            ("id", "=", project_id),
+            ("active", "=", True),
+        ], limit=1)
+        if not project:
+            return {"count": 0, "tasks": [], "domain": []}
+
+        domain = [
+            ("project_id", "=", project.id),
+            ("active", "=", True),
+        ]
+        if sprint_filter == "none":
+            domain.append(("sprint_id", "=", False))
+        elif sprint_filter != "all":
+            sprint_id = self._dashboard_integer_id(sprint_filter)
+            sprint = self.env["project.sprint"].search([
+                ("id", "=", sprint_id or 0),
+                ("project_id", "=", project.id),
+            ], limit=1)
+            if not sprint:
+                return {"count": 0, "tasks": [], "domain": []}
+            domain.append(("sprint_id", "=", sprint.id))
+
+        try:
+            limit = min(100, max(1, int(limit)))
+        except (TypeError, ValueError):
+            limit = 20
+        count = Task.search_count(domain)
+        tasks = Task.search(
+            domain,
+            order="sprint_sequence_order, hierarchical_priority_order, sequence, name, id",
+            limit=limit,
+        )
+        state_labels = dict(
+            Task._fields["state"]._description_selection(self.env)
+        )
+        return {
+            "count": count,
+            "domain": domain,
+            "tasks": [{
+                "id": task.id,
+                "name": task.display_name,
+                "state": task.state,
+                "state_label": state_labels.get(task.state, task.state),
+                "sprint_name": task.sprint_id.display_name or _("Sin Sprint"),
+                "hierarchical_priority": task.hierarchical_priority,
+            } for task in tasks],
         }
 
     @api.model
@@ -787,18 +1146,22 @@ class ProjectProject(models.Model):
         status_labels = dict(
             Project._fields["last_update_status"]._description_selection(self.env)
         )
+        progress_by_project = self._get_project_execution_progress_by_project(
+            projects
+        )
         project_rows = [{
             "id": project.id,
             "name": project.display_name,
             "customer_name": project.partner_id.display_name or "",
-            "progress": round(project.task_completion_percentage * 100, 1),
+            "progress": progress_by_project[project.id]["percentage"],
             "status": project.last_update_status,
             "status_label": status_labels.get(project.last_update_status, ""),
             "deadline": fields.Date.to_string(project.date) if project.date else False,
         } for project in projects]
         project_rows.sort(key=lambda project: (
             DASHBOARD_STATUS_ORDER.get(project["status"], 99),
-            project["progress"],
+            project["progress"] is False,
+            project["progress"] or 0,
             project["name"].lower(),
         ))
 
@@ -916,5 +1279,6 @@ class ProjectProject(models.Model):
                 projects,
                 task_domain,
                 current_datetime,
+                progress_by_project=progress_by_project,
             ),
         }

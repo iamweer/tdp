@@ -3,13 +3,15 @@ from datetime import date, datetime, timedelta
 from lxml import etree
 
 from odoo import Command, fields
-from odoo.exceptions import ValidationError
+from odoo.exceptions import AccessError, ValidationError
 from odoo.tests import TransactionCase, new_test_user, tagged
 
 from ..hooks import _copy_field_if_empty, _hide_existing_subtasks
 from ..models.project_project import (
     DASHBOARD_HEALTH_DEFAULTS,
     DASHBOARD_HEALTH_PARAMETERS,
+    WARRANTY_ACTIVATION_PARAMETER,
+    WARRANTY_VICTOR_LOGIN,
 )
 
 
@@ -45,6 +47,34 @@ class TestProjectCustomExtension(TransactionCase):
                 "planned_date_begin": datetime(2026, 2, 1, 8, 0),
                 "date_deadline": datetime(2026, 1, 31, 17, 0),
             })
+
+    def test_hierarchical_priority_rejects_negative_values(self):
+        with self.assertRaises(ValidationError):
+            self.env["project.task"].create({
+                "name": "Prioridad negativa",
+                "project_id": self.project.id,
+                "hierarchical_priority": -1,
+            })
+
+    def test_resolved_stage_marks_tasks_done_on_create_and_batch_write(self):
+        stage = self.env["project.task.type"].create({
+            "name": "Resuelto",
+            "project_ids": [Command.link(self.project.id)],
+        })
+        task_model = self.env["project.task"]
+        task = task_model.create({
+            "name": "Creada como resuelta",
+            "project_id": self.project.id,
+            "stage_id": stage.id,
+        })
+        self.assertEqual(task.state, "1_done")
+
+        tasks = task_model.create([
+            {"name": "Resuelta A", "project_id": self.project.id},
+            {"name": "Resuelta B", "project_id": self.project.id},
+        ])
+        tasks.write({"stage_id": stage.id})
+        self.assertEqual(set(tasks.mapped("state")), {"1_done"})
 
     def test_warranty_display_formats(self):
         self.project.write({
@@ -136,6 +166,16 @@ class TestProjectCustomExtension(TransactionCase):
             view_id=self.env.ref("project.view_project_kanban").id,
             view_type="kanban",
         )["arch"])
+        task_kanban = etree.fromstring(self.env["project.task"].get_view(
+            view_id=self.env.ref("project.view_task_kanban").id,
+            view_type="kanban",
+        )["arch"])
+        sprint_list = etree.fromstring(self.env["project.sprint"].get_view(
+            view_id=self.env.ref(
+                "project_custom_extension.project_sprint_view_list"
+            ).id,
+            view_type="list",
+        )["arch"])
 
         self.assertEqual(
             len(task_form.xpath(
@@ -147,6 +187,34 @@ class TestProjectCustomExtension(TransactionCase):
             len(task_list.xpath("//field[@name='planned_date_begin']")),
             1,
         )
+        self.assertEqual(
+            len(task_form.xpath("//field[@name='hierarchical_priority']")),
+            1,
+        )
+        self.assertEqual(
+            [field.get("name") for field in task_form.xpath(
+                "//div[@id='date_deadline_and_recurring_task']/"
+                "following-sibling::*[position() <= 2]"
+            )],
+            ["sprint_id", "hierarchical_priority"],
+        )
+        self.assertTrue(task_list.xpath("//field[@name='hierarchical_priority']"))
+        self.assertTrue(task_kanban.xpath("//field[@name='hierarchical_priority']"))
+        self.assertTrue(task_form.xpath("//field[@name='sprint_id']"))
+        self.assertTrue(task_list.xpath("//field[@name='sprint_id']"))
+        self.assertTrue(task_kanban.xpath("//field[@name='sprint_id']"))
+        self.assertIn(
+            "sprint_sequence_order, hierarchical_priority_order",
+            task_list.get("default_order"),
+        )
+        self.assertIn(
+            "sprint_sequence_order, hierarchical_priority_order",
+            task_kanban.get("default_order"),
+        )
+        self.assertTrue(task_list.xpath(
+            "//field[@name='sprint_sequence_order' and @column_invisible='True']"
+        ))
+        self.assertTrue(sprint_list.xpath("//field[@name='sequence']"))
         self.assertEqual(
             len(project_form.xpath("//field[@name='warranty_start_date']")),
             1,
@@ -198,6 +266,14 @@ class TestProjectCustomExtension(TransactionCase):
             detail_action["tag"],
             "project_custom_extension.ProjectDetailDashboard",
         )
+        sprint_action = self.env["ir.actions.actions"]._for_xml_id(
+            "project_custom_extension.project_sprint_action"
+        )
+        sprint_action_record = self.env.ref(
+            "project_custom_extension.project_sprint_action"
+        )
+        self.assertEqual(sprint_action_record.context, "{}")
+        self.assertNotIn("active_id", str(sprint_action.get("context", {})))
         self.assertEqual(
             len(settings_view.xpath(
                 "//field[@name='project_dashboard_progress_weight']"
@@ -210,6 +286,7 @@ class TestProjectCustomExtension(TransactionCase):
             )),
             1,
         )
+        self.assertEqual(sprint_action["res_model"], "project.sprint")
 
 
 @tagged("post_install", "-at_install")
@@ -384,7 +461,7 @@ class TestProjectDashboard(TransactionCase):
             data["project"]["responsible_name"],
             self.on_track_project.user_id.display_name or "Sin asignar",
         )
-        self.assertEqual(data["progress"]["percentage"], 25.0)
+        self.assertFalse(data["progress"]["percentage"])
         self.assertEqual(
             data["progress"]["total_tasks"],
             self.on_track_project.task_count,
@@ -393,21 +470,8 @@ class TestProjectDashboard(TransactionCase):
             data["progress"]["open_tasks"],
             self.on_track_project.open_task_count,
         )
-        self.assertEqual(data["progress"]["mode"], "parents")
-        parent_progress = next(
-            item for item in data["progress"]["parent_tasks"]
-            if item["id"] == self.safe_task.id
-        )
-        self.assertEqual(parent_progress["total_subtasks"], 3)
-        self.assertEqual(parent_progress["percentage"], 0.0)
-        self.assertEqual(
-            parent_progress["domain"],
-            [
-                ("project_id", "=", self.on_track_project.id),
-                ("active", "=", True),
-                ("parent_id", "=", self.safe_task.id),
-            ],
-        )
+        self.assertEqual(data["progress"]["mode"], "general")
+        self.assertFalse(data["progress"]["planned"])
         completed_domain = self._item_by_key(
             data["progress"]["metrics"], "completed"
         )["domain"]
@@ -426,6 +490,44 @@ class TestProjectDashboard(TransactionCase):
             data["critical_activities"]["items"][0]["name"],
             "Tarea vencida",
         )
+
+    def test_project_detail_dashboard_state_scopes_return_matching_domains(self):
+        main_task = self.env["project.task"].create({
+            "name": "Principal hecha",
+            "project_id": self.on_track_project.id,
+            "state": "1_done",
+        })
+        subtask = self.env["project.task"].create({
+            "name": "Subtarea en progreso",
+            "project_id": self.on_track_project.id,
+            "parent_id": main_task.id,
+        })
+
+        data = self.env["project.project"].get_project_detail_dashboard_data(
+            self.on_track_project.id,
+            self.partner_a.id,
+        )
+        main_slice = next(
+            state for state in data["activity_states_by_scope"]["main"]
+            if state["key"] == "1_done"
+        )
+        subtask_slice = next(
+            state for state in data["activity_states_by_scope"]["subtasks"]
+            if state["key"] == "01_in_progress"
+        )
+
+        self.assertIn(("parent_id", "=", False), main_slice["domain"])
+        self.assertIn(("parent_id", "!=", False), subtask_slice["domain"])
+        self.assertEqual(
+            self.env["project.task"].search_count(main_slice["domain"]),
+            main_slice["count"],
+        )
+        self.assertEqual(
+            self.env["project.task"].search_count(subtask_slice["domain"]),
+            subtask_slice["count"],
+        )
+        self.assertIn(main_task, self.env["project.task"].search(main_slice["domain"]))
+        self.assertIn(subtask, self.env["project.task"].search(subtask_slice["domain"]))
 
     def test_project_detail_dashboard_uses_oldest_overdue_activities(self):
         now = fields.Datetime.now()
@@ -461,6 +563,8 @@ class TestProjectDashboard(TransactionCase):
             parent = self.env["project.task"].create({
                 "name": f"Tarea padre {index}",
                 "project_id": project.id,
+                "planned_date_begin": datetime(2026, 1, 1, 12),
+                "date_deadline": datetime(2026, 1, 7, 12),
             })
             self.env["project.task"].create({
                 "name": f"Subtarea {index}",
@@ -582,16 +686,115 @@ class TestProjectDashboard(TransactionCase):
             self.env["project.task"].search(critical["domain"]).project_id,
         )
 
-    def test_dashboard_progress_uses_main_task_completion(self):
+    def test_project_progress_weights_phase_duration_and_nested_leaf_tasks(self):
+        project = self._create_project(
+            "Proyecto con fases planificadas",
+            self.partner_a,
+            "on_track",
+        )
+        short_phase = self.env["project.task"].create({
+            "name": "Fase corta",
+            "project_id": project.id,
+            "planned_date_begin": datetime(2026, 1, 1, 12),
+            "date_deadline": datetime(2026, 1, 7, 12),
+        })
+        self.env["project.task"].create({
+            "name": "Historia hecha",
+            "project_id": project.id,
+            "parent_id": short_phase.id,
+            "state": "1_done",
+        })
+        self.env["project.task"].create({
+            "name": "Historia cancelada",
+            "project_id": project.id,
+            "parent_id": short_phase.id,
+            "state": "1_canceled",
+        })
+        long_phase = self.env["project.task"].create({
+            "name": "Fase larga",
+            "project_id": project.id,
+            "planned_date_begin": datetime(2026, 1, 1, 12),
+            "date_deadline": datetime(2026, 1, 14, 12),
+        })
+        container = self.env["project.task"].create({
+            "name": "Contenedor de historias",
+            "project_id": project.id,
+            "parent_id": long_phase.id,
+        })
+        self.env["project.task"].create({
+            "name": "Historia anidada hecha",
+            "project_id": project.id,
+            "parent_id": container.id,
+            "state": "1_done",
+        })
+        self.env["project.task"].create({
+            "name": "Historia anidada pendiente",
+            "project_id": project.id,
+            "parent_id": container.id,
+        })
+
+        detail = self.env["project.project"].get_project_detail_dashboard_data(
+            project.id,
+            self.partner_a.id,
+        )
+        dashboard = self.env["project.project"].get_project_dashboard_data(
+            self.partner_a.id,
+        )
+        project_row = next(row for row in dashboard["projects"] if row["id"] == project.id)
+
+        self.assertEqual(detail["progress"]["percentage"], 50.0)
+        self.assertEqual(project_row["progress"], detail["progress"]["percentage"])
+        phases = {item["id"]: item for item in detail["progress"]["parent_tasks"]}
+        self.assertEqual(phases[short_phase.id]["duration_days"], 7)
+        self.assertEqual(phases[long_phase.id]["duration_days"], 14)
+        self.assertEqual(phases[short_phase.id]["percentage"], 50.0)
+        self.assertEqual(phases[long_phase.id]["percentage"], 50.0)
+
+    def test_project_progress_is_unavailable_when_a_phase_date_is_missing(self):
+        project = self._create_project(
+            "Proyecto sin planificación completa",
+            self.partner_a,
+            "on_track",
+        )
+        self.env["project.task"].create({
+            "name": "Fase sin fecha final",
+            "project_id": project.id,
+            "planned_date_begin": datetime(2026, 1, 1, 12),
+        })
+        progress = self.env["project.project"]._get_project_execution_progress(
+            project
+        )
+        self.assertFalse(progress["percentage"])
+
+    def test_dashboard_progress_uses_planned_phase_completion(self):
+        project = self._create_project(
+            "Proyecto de avance general",
+            self.partner_a,
+            "on_track",
+        )
+        self.env["project.task"].create({
+            "name": "Fase completada",
+            "project_id": project.id,
+            "planned_date_begin": datetime(2026, 1, 1, 12),
+            "date_deadline": datetime(2026, 1, 7, 12),
+            "state": "1_done",
+        })
+        self.env["project.task"].create({
+            "name": "Fase pendiente",
+            "project_id": project.id,
+            "planned_date_begin": datetime(2026, 1, 1, 12),
+            "date_deadline": datetime(2026, 1, 14, 12),
+        })
         data = self.env["project.project"].get_project_dashboard_data(
             self.partner_a.id
         )
         project_row = next(
             row for row in data["projects"]
-            if row["id"] == self.on_track_project.id
+            if row["id"] == project.id
         )
 
-        self.assertEqual(project_row["progress"], 25.0)
+        self.assertEqual(project_row["progress"], 33.3)
+        self.assertEqual(data["health"]["components"]["progress"], 33.3)
         self.assertEqual(data["projects"][0]["id"], self.at_risk_project.id)
 
     def test_dashboard_health_formula_and_problem_deduplication(self):
@@ -603,12 +806,12 @@ class TestProjectDashboard(TransactionCase):
         self.assertIsNot(health["score"], False)
         self.assertGreaterEqual(health["components"]["operations"], 0)
         self.assertLessEqual(health["components"]["operations"], 100)
+        self.assertFalse(health["components"]["progress"])
         self.assertEqual(
             health["score"],
             round(
-                health["components"]["progress"] * 0.5
-                + health["components"]["status"] * 0.3
-                + health["components"]["operations"] * 0.2
+                (health["components"]["status"] * 0.3
+                 + health["components"]["operations"] * 0.2) / 0.5
             ),
         )
 
@@ -722,3 +925,301 @@ class TestProjectDashboard(TransactionCase):
             [row["id"] for row in data["projects"]],
         )
         self.assertNotIn(self.partner_private.id, data["customer_ids"])
+
+    def test_sprint_dashboard_orders_tasks_and_filters_by_sprint(self):
+        project = self._create_project(
+            "Proyecto con Sprints",
+            self.partner_a,
+            "on_track",
+        )
+        first_sprint = self.env["project.sprint"].create({
+            "name": "Sprint primero",
+            "project_id": project.id,
+            "sequence": 10,
+        })
+        second_sprint = self.env["project.sprint"].create({
+            "name": "Sprint segundo",
+            "project_id": project.id,
+            "sequence": 20,
+        })
+        task_unprioritized = self.env["project.task"].create({
+            "name": "Sin prioridad",
+            "project_id": project.id,
+            "sprint_id": first_sprint.id,
+            "state": "1_canceled",
+        })
+        task_first = self.env["project.task"].create({
+            "name": "Prioridad uno",
+            "project_id": project.id,
+            "sprint_id": first_sprint.id,
+            "hierarchical_priority": 1,
+            "state": "1_done",
+        })
+        task_later_sprint = self.env["project.task"].create({
+            "name": "Sprint posterior",
+            "project_id": project.id,
+            "sprint_id": second_sprint.id,
+            "hierarchical_priority": 1,
+        })
+        task_without_sprint = self.env["project.task"].create({
+            "name": "Sin Sprint",
+            "project_id": project.id,
+        })
+
+        all_data = self.env["project.project"].get_project_sprint_dashboard_data(
+            project.id,
+        )
+        first_data = self.env["project.project"].get_project_sprint_dashboard_data(
+            project.id,
+            str(first_sprint.id),
+        )
+        none_data = self.env["project.project"].get_project_sprint_dashboard_data(
+            project.id,
+            "none",
+        )
+        detail = self.env["project.project"].get_project_detail_dashboard_data(
+            project.id,
+            self.partner_a.id,
+        )
+        sprint_summaries = {item["id"]: item for item in detail["sprints"]}
+
+        self.assertEqual(all_data["count"], 4)
+        self.assertEqual(
+            [task["id"] for task in all_data["tasks"]],
+            [task_first.id, task_unprioritized.id, task_later_sprint.id, task_without_sprint.id],
+        )
+        self.assertEqual(first_data["count"], 2)
+        self.assertEqual(first_data["tasks"][0]["id"], task_first.id)
+        self.assertEqual(none_data["count"], 1)
+        self.assertEqual(none_data["tasks"][0]["id"], task_without_sprint.id)
+        self.assertEqual(sprint_summaries[first_sprint.id]["total"], 2)
+        self.assertEqual(sprint_summaries[False]["total"], 1)
+        first_sprint_states = {
+            state["key"]: state["count"]
+            for state in sprint_summaries[first_sprint.id]["states"]
+        }
+        self.assertEqual(first_sprint_states["1_done"], 1)
+        self.assertEqual(first_sprint_states["1_canceled"], 1)
+        self.assertEqual(
+            self.env["project.task"].search_count(first_data["domain"]),
+            first_data["count"],
+        )
+
+    def test_sprint_permissions_follow_project_visibility_and_clients_read_only(self):
+        project = self._create_project(
+            "Proyecto con permisos de Sprint",
+            self.partner_a,
+            "on_track",
+        )
+        assigned_task = self.env["project.task"].create({
+            "name": "Tarea del usuario interno",
+            "project_id": project.id,
+            "user_ids": [Command.link(self.project_user.id)],
+        })
+        sprint_model = self.env["project.sprint"]
+        sprint = sprint_model.with_user(self.project_user).create({
+            "name": "Sprint interno",
+            "project_id": project.id,
+        })
+        self.assertTrue(sprint_model.with_user(self.project_user).search([
+            ("id", "=", sprint.id),
+        ]))
+
+        client = new_test_user(
+            self.env,
+            login="project_sprint_client",
+            groups="project_custom_extension.group_project_client",
+        )
+        assigned_task.write({"user_ids": [Command.link(client.id)]})
+        self.assertTrue(sprint_model.with_user(client).search([
+            ("id", "=", sprint.id),
+        ]))
+        with self.assertRaises(AccessError):
+            sprint_model.with_user(client).browse(sprint.id).write({
+                "name": "Cambio no permitido",
+            })
+
+    def test_task_cannot_use_a_sprint_from_another_project(self):
+        other_project = self.env["project.project"].create({
+            "name": "Otro proyecto",
+        })
+        sprint = self.env["project.sprint"].create({
+            "name": "Sprint ajeno",
+            "project_id": other_project.id,
+        })
+        task = self.env["project.task"].create({
+            "name": "Tarea de prueba",
+            "project_id": self.on_track_project.id,
+        })
+        with self.assertRaises(ValidationError):
+            task.write({"sprint_id": sprint.id})
+
+    def test_warranty_cron_closes_due_projects_and_notifies_once(self):
+        today = fields.Date.context_today(self.env["project.project"])
+        parameters = self.env["ir.config_parameter"]
+        parameters.set_param(
+            WARRANTY_ACTIVATION_PARAMETER,
+            fields.Date.to_string(today),
+        )
+        manager = new_test_user(
+            self.env,
+            login="warranty_project_manager",
+            groups="project.group_project_manager",
+        )
+        victor = self.env["res.users"].search(
+            [("login", "=", WARRANTY_VICTOR_LOGIN)],
+            limit=1,
+        ) or new_test_user(
+            self.env,
+            login=WARRANTY_VICTOR_LOGIN,
+            groups="project.group_project_user",
+        )
+        manager.partner_id.email = "manager@example.com"
+        victor.partner_id.email = "victor@example.com"
+        self.assertEqual(manager.email, "manager@example.com")
+        self.assertEqual(victor.email, "victor@example.com")
+        due_project = self._create_project(
+            "Garantía vence hoy",
+            self.partner_a,
+            "on_track",
+            user_id=manager.id,
+            warranty_end_date=today,
+        )
+        self.assertEqual(due_project.user_id, manager)
+        past_project = self._create_project(
+            "Garantía histórica",
+            self.partner_a,
+            "on_track",
+            warranty_end_date=today - timedelta(days=1),
+        )
+        root_user = self.env.ref("base.user_root")
+        project_model = self.env["project.project"].with_user(root_user)
+
+        project_model._cron_close_projects_after_warranty()
+
+        self.assertEqual(due_project.last_update_status, "done")
+        self.assertEqual(due_project.warranty_auto_closed_on, today)
+        self.assertEqual(past_project.last_update_status, "on_track")
+        activities = self.env["mail.activity"].search([
+            ("res_model", "=", "project.project"),
+            ("res_id", "=", due_project.id),
+            ("summary", "=", "Garantía finalizada"),
+        ])
+        self.assertEqual(set(activities.mapped("user_id").ids), {manager.id, victor.id})
+        mail_model = self.env["mail.mail"]
+        queued_addresses = mail_model.search([]).mapped("email_to")
+        self.assertIn("manager@example.com", queued_addresses)
+        self.assertIn("victor@example.com", queued_addresses)
+
+        activity_count = len(activities)
+        mail_count = mail_model.search_count([
+            ("email_to", "ilike", "manager@example.com"),
+        ]) + mail_model.search_count([
+            ("email_to", "ilike", "victor@example.com"),
+        ])
+        project_model._cron_close_projects_after_warranty()
+        self.assertEqual(
+            self.env["mail.activity"].search_count([
+                ("res_model", "=", "project.project"),
+                ("res_id", "=", due_project.id),
+                ("summary", "=", "Garantía finalizada"),
+            ]),
+            activity_count,
+        )
+        self.assertEqual(
+            mail_model.search_count([
+                ("email_to", "ilike", "manager@example.com"),
+            ]) + mail_model.search_count([
+                ("email_to", "ilike", "victor@example.com"),
+            ]),
+            mail_count,
+        )
+
+    def test_warranty_cron_closes_when_recipients_are_missing_and_logs_them(self):
+        today = fields.Date.context_today(self.env["project.project"])
+        self.env["ir.config_parameter"].set_param(
+            WARRANTY_ACTIVATION_PARAMETER,
+            fields.Date.to_string(today),
+        )
+        victor = self.env["res.users"].search(
+            [("login", "=", WARRANTY_VICTOR_LOGIN)],
+            limit=1,
+        ) or new_test_user(
+            self.env,
+            login=WARRANTY_VICTOR_LOGIN,
+            groups="project.group_project_user",
+        )
+        victor.partner_id.email = False
+        project = self._create_project(
+            "Proyecto sin destinatario completo",
+            self.partner_a,
+            "on_track",
+            user_id=False,
+            warranty_end_date=today,
+        )
+
+        self.env["project.project"].with_user(
+            self.env.ref("base.user_root")
+        )._cron_close_projects_after_warranty()
+
+        self.assertEqual(project.last_update_status, "done")
+        activities = self.env["mail.activity"].search([
+            ("res_model", "=", "project.project"),
+            ("res_id", "=", project.id),
+            ("summary", "=", "Garantía finalizada"),
+        ])
+        self.assertEqual(activities.mapped("user_id").ids, [victor.id])
+        self.assertFalse(self.env["mail.mail"].search([
+            ("email_to", "ilike", WARRANTY_VICTOR_LOGIN),
+        ]))
+        self.assertIn(
+            "gerente del proyecto sin asignar",
+            " ".join(project.message_ids.mapped("body")),
+        )
+
+    def test_warranty_cron_deduplicates_recipients_with_the_same_email(self):
+        today = fields.Date.context_today(self.env["project.project"])
+        self.env["ir.config_parameter"].set_param(
+            WARRANTY_ACTIVATION_PARAMETER,
+            fields.Date.to_string(today),
+        )
+        manager = new_test_user(
+            self.env,
+            login="warranty_shared_email_manager",
+            groups="project.group_project_manager",
+        )
+        victor = self.env["res.users"].search(
+            [("login", "=", WARRANTY_VICTOR_LOGIN)],
+            limit=1,
+        ) or new_test_user(
+            self.env,
+            login=WARRANTY_VICTOR_LOGIN,
+            groups="project.group_project_user",
+        )
+        shared_email = "shared-warranty@example.com"
+        manager.partner_id.email = shared_email
+        victor.partner_id.email = shared_email
+        project = self._create_project(
+            "Garantía con correo compartido",
+            self.partner_a,
+            "on_track",
+            user_id=manager.id,
+            warranty_end_date=today,
+        )
+
+        self.env["project.project"].with_user(
+            self.env.ref("base.user_root")
+        )._cron_close_projects_after_warranty()
+
+        activities = self.env["mail.activity"].search([
+            ("res_model", "=", "project.project"),
+            ("res_id", "=", project.id),
+            ("summary", "=", "Garantía finalizada"),
+        ])
+        self.assertEqual(set(activities.mapped("user_id").ids), {manager.id, victor.id})
+        self.assertEqual(
+            self.env["mail.mail"].search_count([
+                ("email_to", "=", shared_email),
+            ]),
+            1,
+        )

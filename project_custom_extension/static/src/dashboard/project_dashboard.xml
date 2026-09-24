@@ -101,11 +101,12 @@
                                     </span>
                                     <span class="o_project_dashboard_progress_track" aria-hidden="true">
                                         <span t-attf-class="o_project_dashboard_progress_bar o_project_dashboard_progress_bar--#{project.status}"
-                                              t-att-style="'width: ' + project.progress + '%'"/>
+                                              t-att-style="'width: ' + (project.progress === false ? 0 : project.progress) + '%'"/>
                                     </span>
-                                    <strong class="o_project_dashboard_progress_value">
+                                    <strong t-if="project.progress !== false" class="o_project_dashboard_progress_value">
                                         <t t-out="formatPercentage(project.progress)"/>%
                                     </strong>
+                                    <strong t-else="" class="o_project_dashboard_progress_value">Planificación incompleta</strong>
                                     <i class="fa fa-chevron-right" aria-hidden="true"/>
                                 </button>
                             </div>

@@ -125,11 +125,35 @@ class ProjectTask(models.Model):
             default_project_id = self.env.context.get("default_project_id")
             for values in vals_list:
                 self._check_project_user_task_links(values, default_project_id)
-        return super().create(vals_list)
+        tasks = super().create(vals_list)
+        resolved_tasks = tasks.filtered(
+            lambda task: task.stage_id.name == "Resuelto"
+            and task.state != "1_done"
+        )
+        if resolved_tasks:
+            resolved_tasks.with_context(
+                _skip_resolved_stage_state_sync=True
+            ).write({"state": "1_done"})
+        return tasks
+
+    def _write_with_resolved_stage_sync(self, vals):
+        previous_stage_ids = {task.id: task.stage_id.id for task in self}
+        result = super().write(vals)
+        if not self.env.context.get("_skip_resolved_stage_state_sync"):
+            resolved_tasks = self.filtered(
+                lambda task: previous_stage_ids.get(task.id) != task.stage_id.id
+                and task.stage_id.name == "Resuelto"
+                and task.state != "1_done"
+            )
+            if resolved_tasks:
+                resolved_tasks.with_context(
+                    _skip_resolved_stage_state_sync=True
+                ).write({"state": "1_done"})
+        return result
 
     def write(self, vals):
         if self.env.su or self.env.user.has_group("project.group_project_manager"):
-            return super().write(vals)
+            return self._write_with_resolved_stage_sync(vals)
 
         is_client = self.env.user.has_group(
             "project_custom_extension.group_project_client"
@@ -155,7 +179,7 @@ class ProjectTask(models.Model):
                 )
         elif "project_id" in vals or "parent_id" in vals:
             self._check_project_user_task_links(vals)
-        return super().write(vals)
+        return self._write_with_resolved_stage_sync(vals)
 
     def unlink(self):
         if not self.env.su and (
@@ -169,6 +193,33 @@ class ProjectTask(models.Model):
         string="Fecha inicial",
         tracking=True,
     )
+    hierarchical_priority = fields.Integer(
+        string="Prioridad jerárquica",
+        default=0,
+        tracking=True,
+        index=True,
+    )
+    hierarchical_priority_order = fields.Integer(
+        string="Orden de prioridad jerárquica",
+        compute="_compute_hierarchical_priority_order",
+        store=True,
+        index=True,
+    )
+
+    @api.depends("hierarchical_priority")
+    def _compute_hierarchical_priority_order(self):
+        for task in self:
+            task.hierarchical_priority_order = (
+                task.hierarchical_priority or 2147483647
+            )
+
+    @api.constrains("hierarchical_priority")
+    def _check_hierarchical_priority(self):
+        for task in self:
+            if task.hierarchical_priority < 0:
+                raise ValidationError(
+                    _("La prioridad jerárquica no puede ser negativa.")
+                )
 
     @api.constrains("planned_date_begin", "date_deadline")
     def _check_planned_dates(self):

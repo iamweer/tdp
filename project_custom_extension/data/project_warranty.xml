@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="mail_template_warranty_completion" model="mail.template">
+        <field name="name">Finalización de garantía del proyecto</field>
+        <field name="model_id" ref="project.model_project_project"/>
+        <field name="subject">Garantía finalizada: {{ object.name }}</field>
+        <field name="body_html" type="html">
+            <div>
+                <p>La garantía del proyecto <strong t-out="object.name"/> finalizó el
+                    <strong t-out="object.warranty_end_date"/>.</p>
+                <p>El sistema marcó el proyecto como Terminado.</p>
+            </div>
+        </field>
+        <field name="auto_delete" eval="False"/>
+    </record>
+
+    <record id="ir_cron_close_projects_after_warranty" model="ir.cron">
+        <field name="name">Finalizar proyectos al vencer garantía</field>
+        <field name="model_id" ref="project.model_project_project"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_close_projects_after_warranty()</field>
+        <field name="user_id" ref="base.user_root"/>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="True"/>
+    </record>
+</odoo>

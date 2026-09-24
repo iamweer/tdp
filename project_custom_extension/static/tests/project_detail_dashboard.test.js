@@ -75,6 +75,55 @@ function makeData(projectId = 10) {
                 domain: [["project_id", "=", projectId], ["state", "=", "01_in_progress"]],
             },
         ],
+        activity_states_by_scope: {
+            all: [
+                {
+                    key: "1_done",
+                    label: "Hecho",
+                    count: 7,
+                    model: "project.task",
+                    domain: [["project_id", "=", projectId], ["state", "=", "1_done"]],
+                },
+                {
+                    key: "01_in_progress",
+                    label: "En progreso",
+                    count: 3,
+                    model: "project.task",
+                    domain: [["project_id", "=", projectId], ["state", "=", "01_in_progress"]],
+                },
+            ],
+            main: [{
+                key: "01_in_progress",
+                label: "En progreso",
+                count: 2,
+                model: "project.task",
+                domain: [["project_id", "=", projectId], ["state", "=", "01_in_progress"], ["parent_id", "=", false]],
+            }],
+            subtasks: [{
+                key: "1_done",
+                label: "Hecho",
+                count: 7,
+                model: "project.task",
+                domain: [["project_id", "=", projectId], ["state", "=", "1_done"], ["parent_id", "!=", false]],
+            }],
+        },
+        sprints: [
+            {
+                id: 4,
+                name: "Sprint 1",
+                total: 2,
+                states: [
+                    { key: "1_done", label: "Hecha", count: 1 },
+                    { key: "01_in_progress", label: "En progreso", count: 1 },
+                ],
+            },
+            {
+                id: false,
+                name: "Sin Sprint",
+                total: 1,
+                states: [{ key: "1_canceled", label: "Cancelada", count: 1 }],
+            },
+        ],
         critical_activities: {
             count: 1,
             items: [{ id: 99, name: "Actividad vencida", deadline: "2026-01-05" }],
@@ -152,6 +201,9 @@ describe("detalle de proyecto", () => {
                 if (method === "get_project_detail_dashboard_filters") {
                     return { customer_ids: [1] };
                 }
+                if (method === "get_project_sprint_dashboard_data") {
+                    return { count: 0, tasks: [], domain: [] };
+                }
                 detailCalls.push(kwargs);
                 return makeData(12);
             },
@@ -205,8 +257,11 @@ describe("detalle de proyecto", () => {
     test("opens the project task kanban and clickable metric domains", async () => {
         mockService("orm", {
             call(model, method) {
-                return method === "get_project_detail_dashboard_filters"
-                    ? { customer_ids: [1] }
+                if (method === "get_project_detail_dashboard_filters") {
+                    return { customer_ids: [1] };
+                }
+                return method === "get_project_sprint_dashboard_data"
+                    ? { count: 0, tasks: [], domain: [] }
                     : makeData(12);
             },
         });
@@ -235,8 +290,11 @@ describe("detalle de proyecto", () => {
     test("opens the shared project gantt action from project detail", async () => {
         mockService("orm", {
             call(model, method) {
-                return method === "get_project_detail_dashboard_filters"
-                    ? { customer_ids: [1] }
+                if (method === "get_project_detail_dashboard_filters") {
+                    return { customer_ids: [1] };
+                }
+                return method === "get_project_sprint_dashboard_data"
+                    ? { count: 0, tasks: [], domain: [] }
                     : makeData(12);
             },
         });
@@ -264,6 +322,9 @@ describe("detalle de proyecto", () => {
                 if (method === "get_project_detail_dashboard_filters") {
                     return { customer_ids: [1] };
                 }
+                if (method === "get_project_sprint_dashboard_data") {
+                    return { count: 0, tasks: [], domain: [] };
+                }
                 return new Promise((resolve) => pending.set(kwargs.project_id, resolve));
             },
         });
@@ -285,5 +346,103 @@ describe("detalle de proyecto", () => {
 
         expect(component.state.data.project.id).toBe(11);
         expect(component.state.selectedProject.id).toBe(11);
+    });
+
+    test("filters activity states and clickable domains by task hierarchy", async () => {
+        mockService("orm", {
+            call(model, method) {
+                if (method === "get_project_detail_dashboard_filters") {
+                    return { customer_ids: [1] };
+                }
+                return method === "get_project_sprint_dashboard_data"
+                    ? { count: 0, tasks: [], domain: [] }
+                    : makeData(12);
+            },
+        });
+
+        const component = await mountWithCleanup(ProjectDetailDashboard, {
+            noMainContainer: true,
+        });
+        await component.onProjectUpdate([{ id: 12, display_name: "Proyecto 12" }]);
+
+        component.onActivityScopeChange({ target: { value: "main" } });
+        expect(component.activityStateTotal).toBe(2);
+        expect(component.activityStates[0].domain).toEqual([
+            ["project_id", "=", 12],
+            ["state", "=", "01_in_progress"],
+            ["parent_id", "=", false],
+        ]);
+        expect(component.activityTotalMetric.domain).toEqual([
+            ["project_id", "=", 12],
+            ["active", "=", true],
+            ["parent_id", "=", false],
+        ]);
+
+        component.onActivityScopeChange({ target: { value: "subtasks" } });
+        expect(component.activityStateTotal).toBe(7);
+        expect(component.activityStates[0].domain).toEqual([
+            ["project_id", "=", 12],
+            ["state", "=", "1_done"],
+            ["parent_id", "!=", false],
+        ]);
+    });
+
+    test("loads selected sprint tasks and opens the complete filtered list", async () => {
+        const sprintCalls = [];
+        mockService("orm", {
+            call(model, method, args, kwargs) {
+                if (method === "get_project_detail_dashboard_filters") {
+                    return { customer_ids: [1] };
+                }
+                if (method === "get_project_sprint_dashboard_data") {
+                    sprintCalls.push(kwargs);
+                    return {
+                        count: 25,
+                        domain: [["project_id", "=", 12], ["sprint_id", "=", 4]],
+                        tasks: [{
+                            id: 90,
+                            name: "Historia prioritaria",
+                            sprint_name: "Sprint 1",
+                            state_label: "En progreso",
+                            hierarchical_priority: 1,
+                        }],
+                    };
+                }
+                return makeData(12);
+            },
+        });
+
+        const component = await mountWithCleanup(ProjectDetailDashboard, {
+            noMainContainer: true,
+        });
+        await component.onProjectUpdate([{ id: 12, display_name: "Proyecto 12" }]);
+        expect(component.sprintSummary).toEqual({
+            total: 3,
+            states: [
+                { key: "1_done", label: "Hecha", count: 1 },
+                { key: "01_in_progress", label: "En progreso", count: 1 },
+                { key: "1_canceled", label: "Cancelada", count: 1 },
+            ],
+        });
+        await component.onSprintFilterChange({ target: { value: "4" } });
+
+        expect(sprintCalls.at(-1)).toEqual({
+            project_id: 12,
+            sprint_filter: "4",
+            limit: 20,
+        });
+        expect(component.sprintSummary).toEqual({
+            total: 2,
+            states: [
+                { key: "1_done", label: "Hecha", count: 1 },
+                { key: "01_in_progress", label: "En progreso", count: 1 },
+            ],
+        });
+        expect(component.sprintTasks[0].name).toBe("Historia prioritaria");
+        component.openAllSprintTasks();
+        expect(executedActions[0].domain).toEqual([
+            ["project_id", "=", 12],
+            ["sprint_id", "=", 4],
+        ]);
     });
 });
