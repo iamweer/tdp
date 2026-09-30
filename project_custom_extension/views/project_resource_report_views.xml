@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="action_project_resource_report" model="ir.actions.client">
+        <field name="name">Proyectos y recursos</field>
+        <field name="tag">project_custom_extension.ProjectResourceReport</field>
+    </record>
+
+    <menuitem id="menu_project_resource_report"
+              name="Proyectos y recursos"
+              parent="project.menu_project_report"
+              action="action_project_resource_report"
+              sequence="4"
+              groups="project.group_project_manager"/>
+</odoo>

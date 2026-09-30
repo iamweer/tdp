@@ -1,0 +1,310 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="project_custom_extension.ProjectResourceReport">
+        <div class="o_resource_report">
+            <div class="o_resource_report_container">
+                <header class="o_resource_report_header">
+                    <div class="o_resource_report_heading">
+                        <h1>Proyectos y recursos</h1>
+                        <p>Estado de los proyectos y colaboradores asignados en al menos una tarea.</p>
+                    </div>
+                    <div class="o_resource_report_actions">
+                        <button type="button"
+                                class="o_resource_report_btn o_resource_report_btn--tonal"
+                                t-on-click="loadReport"
+                                t-att-disabled="state.loading">
+                            <i t-attf-class="fa fa-refresh #{state.loading ? 'fa-spin' : ''}" aria-hidden="true"/>
+                            <span>Actualizar</span>
+                        </button>
+                        <button type="button"
+                                class="o_resource_report_btn o_resource_report_btn--outlined"
+                                t-on-click="exportCsv"
+                                t-att-disabled="!state.data">
+                            <i class="fa fa-download" aria-hidden="true"/>
+                            <span>Exportar CSV</span>
+                        </button>
+                    </div>
+                </header>
+
+                <div t-if="state.error" class="o_resource_report_feedback" role="alert">
+                    <i class="fa fa-exclamation-circle" aria-hidden="true"/>
+                    <div>
+                        <strong>No se pudo cargar la información.</strong>
+                        <p>Comprueba la conexión e inténtalo nuevamente.</p>
+                    </div>
+                    <button type="button" class="o_resource_report_btn o_resource_report_btn--filled" t-on-click="loadReport">
+                        Reintentar
+                    </button>
+                </div>
+
+                <div t-elif="state.loading and !state.data" class="o_resource_report_feedback" aria-live="polite">
+                    <i class="fa fa-spinner fa-spin" aria-hidden="true"/>
+                    <span>Cargando proyectos y recursos…</span>
+                </div>
+
+                <main t-elif="state.data"
+                      t-attf-class="o_resource_report_content #{state.loading ? 'o_resource_report_content--loading' : ''}">
+                    <t t-set="summary" t-value="kpis"/>
+                    <t t-set="filters" t-value="state.filters"/>
+                    <t t-set="projectGroups" t-value="groups"/>
+
+                    <section class="o_resource_report_kpis" aria-label="Indicadores">
+                        <div class="o_resource_report_kpi">
+                            <span class="o_resource_report_kpi_icon"><i class="fa fa-folder-open" aria-hidden="true"/></span>
+                            <span class="o_resource_report_kpi_label">Proyectos</span>
+                            <strong class="o_resource_report_kpi_value" t-out="summary.projects"/>
+                        </div>
+                        <div class="o_resource_report_kpi">
+                            <span class="o_resource_report_kpi_icon"><i class="fa fa-users" aria-hidden="true"/></span>
+                            <span class="o_resource_report_kpi_label">Colaboradores</span>
+                            <strong class="o_resource_report_kpi_value" t-out="summary.collaborators"/>
+                            <small><t t-out="summary.assignments"/> asignaciones</small>
+                        </div>
+                        <div class="o_resource_report_kpi">
+                            <span class="o_resource_report_kpi_icon"><i class="fa fa-tasks" aria-hidden="true"/></span>
+                            <span class="o_resource_report_kpi_label">Avance promedio</span>
+                            <strong class="o_resource_report_kpi_value" t-out="formatProgress(summary.averageProgress)"/>
+                        </div>
+                        <div class="o_resource_report_kpi">
+                            <span class="o_resource_report_kpi_icon"><i class="fa fa-shield" aria-hidden="true"/></span>
+                            <span class="o_resource_report_kpi_label">En garantía</span>
+                            <strong class="o_resource_report_kpi_value" t-out="summary.inWarranty"/>
+                        </div>
+                        <div class="o_resource_report_kpi">
+                            <span class="o_resource_report_kpi_icon o_resource_report_kpi_icon--warning"><i class="fa fa-user-times" aria-hidden="true"/></span>
+                            <span class="o_resource_report_kpi_label">Sin colaboradores</span>
+                            <strong class="o_resource_report_kpi_value" t-out="summary.withoutCollaborators"/>
+                        </div>
+                        <div class="o_resource_report_kpi o_resource_report_kpi--wide">
+                            <span class="o_resource_report_kpi_label">Colaboradores por empresa</span>
+                            <div class="o_resource_report_split" role="img"
+                                 t-attf-aria-label="TDP #{summary.companyCounts.tdp}, ABI #{summary.companyCounts.abi}, sin empresa #{summary.companyCounts.none}">
+                                <span class="o_resource_report_split_tdp"
+                                      t-attf-style="width: #{companyShare(summary.companyCounts.tdp, summary.collaborators)}%"/>
+                                <span class="o_resource_report_split_abi"
+                                      t-attf-style="width: #{companyShare(summary.companyCounts.abi, summary.collaborators)}%"/>
+                                <span class="o_resource_report_split_none"
+                                      t-attf-style="width: #{companyShare(summary.companyCounts.none, summary.collaborators)}%"/>
+                            </div>
+                            <div class="o_resource_report_split_legend">
+                                <span><i class="o_resource_report_dot o_resource_report_dot--tdp"/>TDP <strong t-out="summary.companyCounts.tdp"/></span>
+                                <span><i class="o_resource_report_dot o_resource_report_dot--abi"/>ABI <strong t-out="summary.companyCounts.abi"/></span>
+                                <span><i class="o_resource_report_dot o_resource_report_dot--none"/>Sin empresa <strong t-out="summary.companyCounts.none"/></span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="o_resource_report_filters" aria-label="Filtros">
+                        <div class="o_resource_report_search">
+                            <i class="fa fa-search" aria-hidden="true"/>
+                            <input type="search"
+                                   placeholder="Buscar proyecto, cliente, colaborador, cédula o correo"
+                                   aria-label="Buscar"
+                                   t-att-value="filters.search"
+                                   t-on-input="(ev) => this.onInputFilter('search', ev)"/>
+                        </div>
+                        <label class="o_resource_report_select">
+                            <span>Cliente</span>
+                            <select t-on-change="(ev) => this.onInputFilter('customerId', ev)">
+                                <option value="" t-att-selected="!filters.customerId">Todos</option>
+                                <option t-foreach="state.data.filters.customers" t-as="option" t-key="option[0]"
+                                        t-att-value="option[0]" t-att-selected="isSelected('customerId', option[0])"
+                                        t-out="option[1]"/>
+                            </select>
+                        </label>
+                        <label class="o_resource_report_select">
+                            <span>Etapa</span>
+                            <select t-on-change="(ev) => this.onInputFilter('stageId', ev)">
+                                <option value="" t-att-selected="!filters.stageId">Todas</option>
+                                <option t-foreach="state.data.filters.stages" t-as="option" t-key="option[0]"
+                                        t-att-value="option[0]" t-att-selected="isSelected('stageId', option[0])"
+                                        t-out="option[1]"/>
+                            </select>
+                        </label>
+                        <label class="o_resource_report_select">
+                            <span>PM</span>
+                            <select t-on-change="(ev) => this.onInputFilter('pmId', ev)">
+                                <option value="" t-att-selected="!filters.pmId">Todos</option>
+                                <option t-foreach="state.data.filters.pms" t-as="option" t-key="option[0]"
+                                        t-att-value="option[0]" t-att-selected="isSelected('pmId', option[0])"
+                                        t-out="option[1]"/>
+                            </select>
+                        </label>
+                        <label class="o_resource_report_select">
+                            <span>Garantía</span>
+                            <select t-on-change="(ev) => this.onInputFilter('warranty', ev)">
+                                <option value="" t-att-selected="!filters.warranty">Todas</option>
+                                <option value="active" t-att-selected="filters.warranty === 'active'">Vigente</option>
+                                <option value="upcoming" t-att-selected="filters.warranty === 'upcoming'">Próxima</option>
+                                <option value="expired" t-att-selected="filters.warranty === 'expired'">Vencida</option>
+                                <option value="none" t-att-selected="filters.warranty === 'none'">Sin garantía</option>
+                            </select>
+                        </label>
+
+                        <div class="o_resource_report_chip_row">
+                            <div class="o_resource_report_chip_group" role="group" aria-label="Empresa del proyecto">
+                                <span class="o_resource_report_chip_group_label">Empresa proyecto</span>
+                                <button type="button"
+                                        t-attf-class="o_resource_report_chip #{!filters.projectCompany ? 'o_resource_report_chip--selected' : ''}"
+                                        t-att-aria-pressed="!filters.projectCompany"
+                                        t-on-click="() => this.setFilter('projectCompany', '')">Todas</button>
+                                <button t-foreach="companyOptions" t-as="option" t-key="option[0]" type="button"
+                                        t-attf-class="o_resource_report_chip #{filters.projectCompany === option[0] ? 'o_resource_report_chip--selected' : ''}"
+                                        t-att-aria-pressed="filters.projectCompany === option[0]"
+                                        t-on-click="() => this.setFilter('projectCompany', option[0])">
+                                    <i t-if="filters.projectCompany === option[0]" class="fa fa-check" aria-hidden="true"/>
+                                    <t t-out="option[1]"/>
+                                </button>
+                            </div>
+                            <div class="o_resource_report_chip_group" role="group" aria-label="Empresa del colaborador">
+                                <span class="o_resource_report_chip_group_label">Empresa colaborador</span>
+                                <button type="button"
+                                        t-attf-class="o_resource_report_chip #{!filters.collaboratorCompany ? 'o_resource_report_chip--selected' : ''}"
+                                        t-att-aria-pressed="!filters.collaboratorCompany"
+                                        t-on-click="() => this.setFilter('collaboratorCompany', '')">Todas</button>
+                                <button t-foreach="companyOptions" t-as="option" t-key="option[0]" type="button"
+                                        t-attf-class="o_resource_report_chip #{filters.collaboratorCompany === option[0] ? 'o_resource_report_chip--selected' : ''}"
+                                        t-att-aria-pressed="filters.collaboratorCompany === option[0]"
+                                        t-on-click="() => this.setFilter('collaboratorCompany', option[0])">
+                                    <i t-if="filters.collaboratorCompany === option[0]" class="fa fa-check" aria-hidden="true"/>
+                                    <t t-out="option[1]"/>
+                                </button>
+                            </div>
+                            <label class="o_resource_report_switch">
+                                <input type="checkbox" role="switch"
+                                       t-att-checked="filters.includeClosed"
+                                       t-on-change="(ev) => this.onToggleFilter('includeClosed', ev)"/>
+                                <span class="o_resource_report_switch_track"/>
+                                <span>Incluir etapas cerradas</span>
+                            </label>
+                            <label class="o_resource_report_switch">
+                                <input type="checkbox" role="switch"
+                                       t-att-checked="filters.onlyWithoutCollaborators"
+                                       t-on-change="(ev) => this.onToggleFilter('onlyWithoutCollaborators', ev)"/>
+                                <span class="o_resource_report_switch_track"/>
+                                <span>Solo sin colaboradores</span>
+                            </label>
+                            <button t-if="hasActiveFilters" type="button"
+                                    class="o_resource_report_btn o_resource_report_btn--text"
+                                    t-on-click="clearFilters">
+                                <i class="fa fa-times" aria-hidden="true"/>
+                                <span>Limpiar filtros</span>
+                            </button>
+                        </div>
+                    </section>
+
+                    <section class="o_resource_report_table_card" aria-label="Proyectos y colaboradores">
+                        <div t-if="!projectGroups.length" class="o_resource_report_empty">
+                            <i class="fa fa-inbox" aria-hidden="true"/>
+                            <p>No hay proyectos que coincidan con los filtros.</p>
+                        </div>
+                        <div t-else="" class="o_resource_report_table_scroll">
+                            <table class="o_resource_report_table">
+                                <thead>
+                                    <tr>
+                                        <t t-foreach="[
+                                            ['project', 'Proyecto'],
+                                            ['customer', 'Cliente'],
+                                            ['stage', 'Etapa actual'],
+                                            ['progress', '% Ejecución'],
+                                            ['date_start', 'Inicio estimado'],
+                                            ['date_end', 'Fin estimado'],
+                                            ['warranty_end', 'Garantía'],
+                                            ['pm', 'PM (responsable)'],
+                                            ['collaborator', 'Colaborador'],
+                                        ]" t-as="column" t-key="column[0]">
+                                            <th t-att-aria-sort="ariaSort(column[0])">
+                                                <button type="button" class="o_resource_report_sort" t-on-click="() => this.sortBy(column[0])">
+                                                    <span t-out="column[1]"/>
+                                                    <i t-attf-class="fa #{sortIcon(column[0])}" aria-hidden="true"/>
+                                                </button>
+                                            </th>
+                                        </t>
+                                        <th>Cédula</th>
+                                        <th>Correo</th>
+                                        <th>Empresa</th>
+                                    </tr>
+                                </thead>
+                                <tbody t-foreach="projectGroups" t-as="group" t-key="group.project.project_id"
+                                       t-attf-class="o_resource_report_group #{group_index % 2 ? 'o_resource_report_group--alt' : ''}">
+                                    <t t-set="project" t-value="group.project"/>
+                                    <tr t-foreach="group.rows" t-as="row" t-key="row.collaborator_id or 0">
+                                        <t t-if="row_first">
+                                            <td t-att-rowspan="group.rows.length" class="o_resource_report_project_cell">
+                                                <button type="button" class="o_resource_report_project_link"
+                                                        t-on-click="() => this.openProject(project)"
+                                                        t-att-title="'Abrir ' + project.project_name">
+                                                    <t t-out="project.project_name"/>
+                                                    <i class="fa fa-external-link" aria-hidden="true"/>
+                                                </button>
+                                                <span t-if="project.project_company_type"
+                                                      t-attf-class="o_resource_report_company o_resource_report_company--#{project.project_company_type}"
+                                                      t-out="companyLabel(project.project_company_type)"/>
+                                            </td>
+                                            <td t-att-rowspan="group.rows.length" t-out="project.customer_name or '—'"/>
+                                            <td t-att-rowspan="group.rows.length">
+                                                <span t-if="project.stage_name"
+                                                      t-attf-class="o_resource_report_stage #{project.stage_folded ? 'o_resource_report_stage--closed' : ''}"
+                                                      t-out="project.stage_name"/>
+                                                <span t-else="">—</span>
+                                            </td>
+                                            <td t-att-rowspan="group.rows.length" class="o_resource_report_progress_cell">
+                                                <div class="o_resource_report_progress">
+                                                    <div class="o_resource_report_progress_track">
+                                                        <span t-attf-style="width: #{progressWidth(project.progress)}%"/>
+                                                    </div>
+                                                    <strong t-out="formatProgress(project.progress)"/>
+                                                </div>
+                                            </td>
+                                            <td t-att-rowspan="group.rows.length" class="o_resource_report_nowrap" t-out="formatDate(project.date_start)"/>
+                                            <td t-att-rowspan="group.rows.length" class="o_resource_report_nowrap" t-out="formatDate(project.date_end)"/>
+                                            <td t-att-rowspan="group.rows.length" class="o_resource_report_nowrap">
+                                                <t t-if="project.warranty_status">
+                                                    <span t-attf-class="o_resource_report_warranty o_resource_report_warranty--#{project.warranty_status}"
+                                                          t-out="warrantyLabel(project.warranty_status)"/>
+                                                    <small class="o_resource_report_warranty_dates">
+                                                        <t t-out="formatDate(project.warranty_start)"/> → <t t-out="formatDate(project.warranty_end)"/>
+                                                    </small>
+                                                </t>
+                                                <span t-else="" class="o_resource_report_muted">Sin garantía</span>
+                                            </td>
+                                            <td t-att-rowspan="group.rows.length" t-out="project.pm_name or '—'"/>
+                                        </t>
+                                        <t t-if="row.collaborator_id">
+                                            <td class="o_resource_report_collaborator">
+                                                <button type="button" class="o_resource_report_collaborator_link"
+                                                        t-on-click="() => this.openCollaboratorTasks(row)"
+                                                        title="Ver tareas del colaborador en el proyecto">
+                                                    <span class="o_resource_report_avatar" t-out="row.collaborator_name.charAt(0).toUpperCase()" aria-hidden="true"/>
+                                                    <span t-out="row.collaborator_name"/>
+                                                </button>
+                                            </td>
+                                            <td class="o_resource_report_nowrap" t-out="row.identification or '—'"/>
+                                            <td>
+                                                <span t-if="row.email" class="o_resource_report_email" t-out="row.email"/>
+                                                <span t-else="">—</span>
+                                            </td>
+                                            <td>
+                                                <span t-if="row.collaborator_company_type"
+                                                      t-attf-class="o_resource_report_company o_resource_report_company--#{row.collaborator_company_type}"
+                                                      t-out="companyLabel(row.collaborator_company_type)"/>
+                                                <span t-else="" class="o_resource_report_muted">—</span>
+                                            </td>
+                                        </t>
+                                        <td t-else="" colspan="4" class="o_resource_report_muted o_resource_report_no_people">
+                                            <i class="fa fa-user-times" aria-hidden="true"/> Sin colaboradores asignados
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <footer class="o_resource_report_table_footer">
+                            <t t-out="projectGroups.length"/> proyectos ·
+                            <t t-out="summary.assignments"/> asignaciones
+                        </footer>
+                    </section>
+                </main>
+            </div>
+        </div>
+    </t>
+</templates>

@@ -8,7 +8,35 @@
             <field name="date" position="after">
                 <field name="warranty_start_date"/>
                 <field name="warranty_end_date"/>
+                <field name="company_type"/>
             </field>
+        </field>
+    </record>
+
+    <record id="project_project_view_list_custom_extension" model="ir.ui.view">
+        <field name="name">project.project.list.custom.extension</field>
+        <field name="model">project.project</field>
+        <field name="inherit_id" ref="project.view_project"/>
+        <field name="arch" type="xml">
+            <field name="partner_id" position="after">
+                <field name="company_type" optional="show"/>
+            </field>
+        </field>
+    </record>
+
+    <record id="project_project_view_search_custom_extension" model="ir.ui.view">
+        <field name="name">project.project.search.custom.extension</field>
+        <field name="model">project.project</field>
+        <field name="inherit_id" ref="project.view_project_project_filter"/>
+        <field name="arch" type="xml">
+            <filter name="inactive" position="before">
+                <filter string="Empresa TDP" name="company_type_tdp" domain="[('company_type', '=', 'tdp')]"/>
+                <filter string="Empresa ABI" name="company_type_abi" domain="[('company_type', '=', 'abi')]"/>
+                <separator/>
+            </filter>
+            <filter name="Manager" position="after">
+                <filter string="Empresa" name="groupby_company_type" context="{'group_by': 'company_type'}"/>
+            </filter>
         </field>
     </record>
 

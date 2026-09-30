@@ -42,6 +42,11 @@ WARRANTY_ACTIVATION_PARAMETER = (
 WARRANTY_VICTOR_LOGIN = "victor.castano@tdpsolutions.co"
 WARRANTY_TIMEZONE = "America/Bogota"
 
+COMPANY_TYPE_SELECTION = [
+    ("tdp", "TDP"),
+    ("abi", "ABI"),
+]
+
 
 class ProjectProject(models.Model):
     _inherit = "project.project"
@@ -116,6 +121,11 @@ class ProjectProject(models.Model):
         string="Cierre automático por garantía",
         readonly=True,
         copy=False,
+        tracking=True,
+    )
+    company_type = fields.Selection(
+        COMPANY_TYPE_SELECTION,
+        string="Empresa",
         tracking=True,
     )
 
@@ -223,13 +233,14 @@ class ProjectProject(models.Model):
         }
 
     @api.model
-    def _get_project_execution_progress_by_project(self, projects):
+    def _get_project_execution_progress_by_project(self, projects, tasks=None):
         if not projects:
             return {}
-        tasks = self.env["project.task"].search([
-            ("project_id", "in", projects.ids),
-            ("active", "=", True),
-        ])
+        if tasks is None:
+            tasks = self.env["project.task"].search([
+                ("project_id", "in", projects.ids),
+                ("active", "=", True),
+            ])
         tasks_by_project = {}
         for task in tasks:
             tasks_by_project.setdefault(task.project_id.id, self.env["project.task"])
@@ -1281,4 +1292,144 @@ class ProjectProject(models.Model):
                 current_datetime,
                 progress_by_project=progress_by_project,
             ),
+        }
+
+    @api.model
+    def _get_resource_report_warranty_status(self, project, today):
+        start_date = project.warranty_start_date
+        end_date = project.warranty_end_date
+        if not start_date and not end_date:
+            return False
+        if end_date and end_date < today:
+            return "expired"
+        if start_date and start_date > today:
+            return "upcoming"
+        return "active"
+
+    @api.model
+    def get_project_resource_report_data(self):
+        """Return one row per project collaborator for the resource report."""
+        if not self.env.user.has_group("project.group_project_manager"):
+            raise AccessError(
+                _("Solo los gerentes de proyecto pueden consultar este informe.")
+            )
+
+        today = fields.Date.context_today(self)
+        projects = self.search([("active", "=", True)], order="name, id")
+        tasks = self.env["project.task"].search([
+            ("project_id", "in", projects.ids),
+            ("active", "=", True),
+        ])
+        progress_by_project = self._get_project_execution_progress_by_project(
+            projects, tasks
+        )
+        users_by_project = {}
+        for task in tasks:
+            users_by_project.setdefault(
+                task.project_id.id, self.env["res.users"]
+            )
+            # Archived users (including OdooBot) are no longer project resources.
+            users_by_project[task.project_id.id] |= task.user_ids.filtered("active")
+
+        all_users = self.env["res.users"].concat(*users_by_project.values())
+        # HR identification data is restricted to HR officers; access to this
+        # report is already limited to project managers above.
+        employees = self.env["hr.employee"].sudo().search([
+            ("user_id", "in", all_users.ids),
+        ])
+        employee_by_user = {}
+        for employee in employees:
+            current = employee_by_user.get(employee.user_id.id)
+            if not current or (
+                employee.company_id == employee.user_id.company_id
+                and current.company_id != employee.user_id.company_id
+            ):
+                employee_by_user[employee.user_id.id] = employee
+
+        company_labels = dict(COMPANY_TYPE_SELECTION)
+        rows = []
+        customers = {}
+        stages = {}
+        managers = {}
+        for project in projects:
+            stage = project.sudo().stage_id
+            project_values = {
+                "project_id": project.id,
+                "project_name": project.display_name,
+                "project_company_type": project.company_type or False,
+                "customer_id": project.partner_id.id or False,
+                "customer_name": project.partner_id.display_name or "",
+                "stage_id": stage.id or False,
+                "stage_name": stage.name or "",
+                "stage_folded": bool(stage.fold),
+                "progress": progress_by_project[project.id]["percentage"],
+                "date_start": fields.Date.to_string(project.date_start)
+                if project.date_start else False,
+                "date_end": fields.Date.to_string(project.date)
+                if project.date else False,
+                "warranty_start": fields.Date.to_string(project.warranty_start_date)
+                if project.warranty_start_date else False,
+                "warranty_end": fields.Date.to_string(project.warranty_end_date)
+                if project.warranty_end_date else False,
+                "warranty_status": self._get_resource_report_warranty_status(
+                    project, today
+                ),
+                "pm_id": project.user_id.id or False,
+                "pm_name": project.user_id.display_name or "",
+            }
+            if project.partner_id:
+                customers[project.partner_id.id] = project.partner_id.display_name
+            if stage:
+                stages[stage.id] = (stage.sequence, stage.name)
+            if project.user_id:
+                managers[project.user_id.id] = project.user_id.display_name
+
+            collaborators = users_by_project.get(
+                project.id, self.env["res.users"]
+            ).sorted(lambda user: (user.name or "").lower())
+            if not collaborators:
+                rows.append(dict(
+                    project_values,
+                    collaborator_id=False,
+                    collaborator_name="",
+                    identification="",
+                    email="",
+                    collaborator_company_type=False,
+                ))
+                continue
+            for user in collaborators:
+                employee = employee_by_user.get(user.id)
+                rows.append(dict(
+                    project_values,
+                    collaborator_id=user.id,
+                    collaborator_name=user.display_name,
+                    identification=(employee and employee.identification_id) or "",
+                    email=(employee and employee.work_email) or user.email or "",
+                    collaborator_company_type=(
+                        (employee and employee.company_type) or False
+                    ),
+                ))
+
+        return {
+            "rows": rows,
+            "filters": {
+                "customers": sorted(
+                    ([pid, name] for pid, name in customers.items()),
+                    key=lambda item: item[1].lower(),
+                ),
+                "stages": [
+                    [stage_id, values[1]]
+                    for stage_id, values in sorted(
+                        stages.items(), key=lambda item: item[1]
+                    )
+                ],
+                "pms": sorted(
+                    ([uid, name] for uid, name in managers.items()),
+                    key=lambda item: item[1].lower(),
+                ),
+                "company_types": [
+                    [key, label] for key, label in company_labels.items()
+                ],
+            },
+            "today": fields.Date.to_string(today),
         }

@@ -1,0 +1,692 @@
+// Material Design 3 tokens, aligned with the blue used by the project dashboards.
+.o_resource_report {
+    --md-sys-color-primary: #0756bb;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #d7e3ff;
+    --md-sys-color-on-primary-container: #001b3f;
+    --md-sys-color-secondary-container: #dbe2f9;
+    --md-sys-color-on-secondary-container: #141b2c;
+    --md-sys-color-tertiary: #7a4f95;
+    --md-sys-color-tertiary-container: #f3daff;
+    --md-sys-color-on-tertiary-container: #2f0a45;
+    --md-sys-color-success-container: #c9efcf;
+    --md-sys-color-on-success-container: #0b3a17;
+    --md-sys-color-warning-container: #ffe08c;
+    --md-sys-color-on-warning-container: #3f2e00;
+    --md-sys-color-error-container: #ffdad6;
+    --md-sys-color-on-error-container: #410002;
+    --md-sys-color-surface: #fafbff;
+    --md-sys-color-surface-container-lowest: #ffffff;
+    --md-sys-color-surface-container-low: #f3f5fb;
+    --md-sys-color-surface-container: #edf0f7;
+    --md-sys-color-surface-container-high: #e7eaf2;
+    --md-sys-color-on-surface: #191c21;
+    --md-sys-color-on-surface-variant: #44474f;
+    --md-sys-color-outline: #74777f;
+    --md-sys-color-outline-variant: #c4c6d0;
+    --md-sys-shape-small: 8px;
+    --md-sys-shape-medium: 12px;
+    --md-sys-shape-large: 16px;
+    --md-sys-shape-full: 999px;
+    --md-sys-elevation-1: 0 1px 2px rgba(0, 0, 0, 0.12), 0 1px 3px 1px rgba(0, 0, 0, 0.06);
+
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible {
+        outline: 3px solid rgba(7, 86, 187, 0.35);
+        outline-offset: 2px;
+    }
+}
+
+.o_resource_report_container {
+    max-width: 1800px;
+    margin: 0 auto;
+    padding: 16px clamp(14px, 2.2vw, 32px) 32px;
+}
+
+.o_resource_report_header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+
+    h1 {
+        margin: 0;
+        font-size: clamp(1.5rem, 2.4vw, 2rem);
+        font-weight: 400;
+        letter-spacing: 0;
+    }
+
+    p {
+        margin: 4px 0 0;
+        color: var(--md-sys-color-on-surface-variant);
+    }
+}
+
+.o_resource_report_actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+// Buttons ---------------------------------------------------------------
+
+.o_resource_report_btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    padding: 0 20px;
+    border: 0;
+    border-radius: var(--md-sys-shape-full);
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    transition: box-shadow 0.15s, background-color 0.15s;
+
+    &:disabled {
+        opacity: 0.45;
+        cursor: default;
+    }
+
+    &--filled {
+        background: var(--md-sys-color-primary);
+        color: var(--md-sys-color-on-primary);
+    }
+
+    &--tonal {
+        background: var(--md-sys-color-secondary-container);
+        color: var(--md-sys-color-on-secondary-container);
+
+        &:hover:not(:disabled) {
+            box-shadow: var(--md-sys-elevation-1);
+        }
+    }
+
+    &--outlined {
+        border: 1px solid var(--md-sys-color-outline);
+        background: transparent;
+        color: var(--md-sys-color-primary);
+
+        &:hover:not(:disabled) {
+            background: rgba(7, 86, 187, 0.08);
+        }
+    }
+
+    &--text {
+        padding: 0 12px;
+        background: transparent;
+        color: var(--md-sys-color-primary);
+
+        &:hover {
+            background: rgba(7, 86, 187, 0.08);
+        }
+    }
+}
+
+// Feedback ----------------------------------------------------------------
+
+.o_resource_report_feedback,
+.o_resource_report_empty {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-height: 200px;
+    padding: 24px;
+    border-radius: var(--md-sys-shape-large);
+    background: var(--md-sys-color-surface-container-low);
+    color: var(--md-sys-color-on-surface-variant);
+    text-align: center;
+
+    > i {
+        color: var(--md-sys-color-primary);
+        font-size: 1.75rem;
+    }
+
+    p {
+        margin: 0;
+    }
+}
+
+.o_resource_report_content {
+    transition: opacity 0.15s;
+
+    &--loading {
+        opacity: 0.6;
+    }
+}
+
+// Indicators --------------------------------------------------------------
+
+.o_resource_report_kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.o_resource_report_kpi {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+        "icon label"
+        "icon value"
+        "icon extra";
+    column-gap: 12px;
+    align-items: center;
+    padding: 16px;
+    border-radius: var(--md-sys-shape-medium);
+    background: var(--md-sys-color-surface-container-lowest);
+    box-shadow: var(--md-sys-elevation-1);
+
+    small {
+        grid-area: extra;
+        color: var(--md-sys-color-on-surface-variant);
+    }
+
+    &--wide {
+        display: flex;
+        grid-column: span 2;
+        flex-direction: column;
+        justify-content: center;
+        gap: 10px;
+
+        > * {
+            width: 100%;
+        }
+
+        @media (max-width: 575px) {
+            grid-column: span 1;
+        }
+    }
+}
+
+.o_resource_report_kpi_icon {
+    grid-area: icon;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--md-sys-shape-medium);
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    font-size: 1.15rem;
+
+    &--warning {
+        background: var(--md-sys-color-warning-container);
+        color: var(--md-sys-color-on-warning-container);
+    }
+}
+
+.o_resource_report_kpi_label {
+    grid-area: label;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 0.8rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+}
+
+.o_resource_report_kpi_value {
+    grid-area: value;
+    font-size: 1.6rem;
+    font-weight: 500;
+    line-height: 1.2;
+}
+
+.o_resource_report_split {
+    display: flex;
+    height: 10px;
+    overflow: hidden;
+    border-radius: var(--md-sys-shape-full);
+    background: var(--md-sys-color-surface-container-high);
+
+    > span {
+        transition: width 0.25s;
+    }
+}
+
+.o_resource_report_split_tdp,
+.o_resource_report_dot--tdp {
+    background: var(--md-sys-color-primary);
+}
+
+.o_resource_report_split_abi,
+.o_resource_report_dot--abi {
+    background: var(--md-sys-color-tertiary);
+}
+
+.o_resource_report_split_none,
+.o_resource_report_dot--none {
+    background: var(--md-sys-color-outline-variant);
+}
+
+.o_resource_report_split_legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 0.8rem;
+
+    strong {
+        color: var(--md-sys-color-on-surface);
+    }
+}
+
+.o_resource_report_dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 6px;
+    border-radius: 50%;
+}
+
+// Filters -------------------------------------------------------------------
+
+.o_resource_report_filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 16px;
+    border-radius: var(--md-sys-shape-large);
+    background: var(--md-sys-color-surface-container-low);
+}
+
+.o_resource_report_search {
+    position: relative;
+    flex: 1 1 280px;
+    min-width: 0;
+
+    > i {
+        position: absolute;
+        top: 50%;
+        left: 16px;
+        transform: translateY(-50%);
+        color: var(--md-sys-color-on-surface-variant);
+    }
+
+    input {
+        width: 100%;
+        height: 48px;
+        padding: 0 16px 0 44px;
+        border: 0;
+        border-radius: var(--md-sys-shape-full);
+        background: var(--md-sys-color-surface-container-high);
+        color: var(--md-sys-color-on-surface);
+    }
+}
+
+.o_resource_report_select {
+    display: flex;
+    flex: 1 1 170px;
+    flex-direction: column;
+    min-width: 140px;
+    margin: 0;
+
+    > span {
+        margin: 0 0 4px 4px;
+        color: var(--md-sys-color-on-surface-variant);
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+
+    select {
+        height: 48px;
+        padding: 0 12px;
+        border: 1px solid var(--md-sys-color-outline);
+        border-radius: var(--md-sys-shape-small);
+        background: var(--md-sys-color-surface-container-lowest);
+        color: var(--md-sys-color-on-surface);
+    }
+}
+
+.o_resource_report_chip_row {
+    display: flex;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 24px;
+}
+
+.o_resource_report_chip_group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.o_resource_report_chip_group_label {
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.o_resource_report_chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 14px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-small);
+    background: transparent;
+    color: var(--md-sys-color-on-surface-variant);
+    font-weight: 500;
+    cursor: pointer;
+
+    &:hover {
+        background: rgba(68, 71, 79, 0.08);
+    }
+
+    &--selected {
+        border-color: transparent;
+        background: var(--md-sys-color-secondary-container);
+        color: var(--md-sys-color-on-secondary-container);
+    }
+}
+
+.o_resource_report_switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    cursor: pointer;
+
+    input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+    }
+}
+
+.o_resource_report_switch_track {
+    position: relative;
+    flex: 0 0 auto;
+    width: 44px;
+    height: 26px;
+    border: 2px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-full);
+    background: var(--md-sys-color-surface-container-high);
+    transition: background-color 0.15s, border-color 0.15s;
+
+    &::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 4px;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--md-sys-color-outline);
+        transform: translateY(-50%);
+        transition: left 0.15s, width 0.15s, height 0.15s, background-color 0.15s;
+    }
+
+    input:checked + & {
+        border-color: var(--md-sys-color-primary);
+        background: var(--md-sys-color-primary);
+
+        &::after {
+            left: 20px;
+            width: 18px;
+            height: 18px;
+            background: var(--md-sys-color-on-primary);
+        }
+    }
+
+    input:focus-visible + & {
+        outline: 3px solid rgba(7, 86, 187, 0.35);
+        outline-offset: 2px;
+    }
+}
+
+// Table ---------------------------------------------------------------------
+
+.o_resource_report_table_card {
+    overflow: hidden;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-large);
+    background: var(--md-sys-color-surface-container-lowest);
+}
+
+.o_resource_report_table_scroll {
+    max-height: calc(100vh - 220px);
+    overflow: auto;
+}
+
+.o_resource_report_table {
+    width: 100%;
+    min-width: 1500px;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.875rem;
+
+    th {
+        position: sticky;
+        z-index: 1;
+        top: 0;
+        padding: 0 12px;
+        height: 52px;
+        border-bottom: 1px solid var(--md-sys-color-outline-variant);
+        background: var(--md-sys-color-surface-container);
+        color: var(--md-sys-color-on-surface-variant);
+        font-size: 0.78rem;
+        font-weight: 600;
+        text-align: left;
+        white-space: nowrap;
+    }
+
+    td {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--md-sys-color-outline-variant);
+        vertical-align: middle;
+    }
+
+    // Project-level cells span all collaborator rows; keep them aligned at the top.
+    td[rowspan] {
+        padding-top: 14px;
+        vertical-align: top;
+    }
+}
+
+.o_resource_report_group {
+    &--alt td {
+        background: var(--md-sys-color-surface-container-low);
+    }
+
+    &:hover td {
+        background: rgba(7, 86, 187, 0.05);
+    }
+}
+
+.o_resource_report_sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.o_resource_report_sort--idle {
+    opacity: 0.35;
+}
+
+.o_resource_report_project_cell {
+    min-width: 220px;
+}
+
+.o_resource_report_project_link,
+.o_resource_report_collaborator_link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--md-sys-color-primary);
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+        text-decoration: underline;
+    }
+
+    .fa-external-link {
+        font-size: 0.75rem;
+        opacity: 0.7;
+    }
+}
+
+.o_resource_report_project_cell .o_resource_report_company {
+    margin-top: 6px;
+}
+
+.o_resource_report_collaborator_link {
+    color: var(--md-sys-color-on-surface);
+    font-weight: 500;
+}
+
+.o_resource_report_avatar {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.o_resource_report_company,
+.o_resource_report_stage,
+.o_resource_report_warranty {
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    padding: 0 10px;
+    border-radius: var(--md-sys-shape-small);
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.o_resource_report_company {
+    &--tdp {
+        background: var(--md-sys-color-primary-container);
+        color: var(--md-sys-color-on-primary-container);
+    }
+
+    &--abi {
+        background: var(--md-sys-color-tertiary-container);
+        color: var(--md-sys-color-on-tertiary-container);
+    }
+}
+
+.o_resource_report_stage {
+    border: 1px solid var(--md-sys-color-outline-variant);
+    color: var(--md-sys-color-on-surface-variant);
+
+    &--closed {
+        background: var(--md-sys-color-surface-container-high);
+    }
+}
+
+.o_resource_report_warranty {
+    &--active {
+        background: var(--md-sys-color-success-container);
+        color: var(--md-sys-color-on-success-container);
+    }
+
+    &--upcoming {
+        background: var(--md-sys-color-warning-container);
+        color: var(--md-sys-color-on-warning-container);
+    }
+
+    &--expired {
+        background: var(--md-sys-color-error-container);
+        color: var(--md-sys-color-on-error-container);
+    }
+}
+
+.o_resource_report_warranty_dates {
+    display: block;
+    margin-top: 4px;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.o_resource_report_progress_cell {
+    min-width: 150px;
+}
+
+.o_resource_report_progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    strong {
+        min-width: 38px;
+        font-weight: 600;
+        text-align: right;
+    }
+}
+
+.o_resource_report_progress_track {
+    flex: 1 1 auto;
+    height: 6px;
+    overflow: hidden;
+    border-radius: var(--md-sys-shape-full);
+    background: var(--md-sys-color-primary-container);
+
+    > span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--md-sys-color-primary);
+    }
+}
+
+.o_resource_report_collaborator,
+.o_resource_report_email {
+    white-space: nowrap;
+}
+
+.o_resource_report_nowrap {
+    white-space: nowrap;
+}
+
+.o_resource_report_muted {
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.o_resource_report_no_people {
+    font-style: italic;
+}
+
+.o_resource_report_table_footer {
+    padding: 12px 16px;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 0.8rem;
+    text-align: right;
+}
