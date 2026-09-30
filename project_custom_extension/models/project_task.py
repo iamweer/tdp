@@ -1,7 +1,28 @@
+import re
+import unicodedata
+
 from lxml import etree
 
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, ValidationError
+
+RESOLVED_STAGE_NAME_PATTERN = re.compile(r"^resuelt[oa]s?$")
+
+
+def is_resolved_stage_name(name):
+    """Indica si el nombre de etapa es una variante de "Resuelto".
+
+    Ignora mayúsculas, tildes, espacios y signos de puntuación en los
+    extremos, y acepta género y número (Resuelto, RESUELTA, resueltos...).
+    """
+    if not name:
+        return False
+    normalized = unicodedata.normalize("NFKD", name)
+    normalized = "".join(
+        char for char in normalized if not unicodedata.combining(char)
+    )
+    normalized = re.sub(r"^\W+|\W+$", "", normalized.casefold())
+    return bool(RESOLVED_STAGE_NAME_PATTERN.match(normalized))
 
 
 class ProjectTask(models.Model):
@@ -127,7 +148,7 @@ class ProjectTask(models.Model):
                 self._check_project_user_task_links(values, default_project_id)
         tasks = super().create(vals_list)
         resolved_tasks = tasks.filtered(
-            lambda task: task.stage_id.name == "Resuelto"
+            lambda task: is_resolved_stage_name(task.stage_id.name)
             and task.state != "1_done"
         )
         if resolved_tasks:
@@ -142,7 +163,7 @@ class ProjectTask(models.Model):
         if not self.env.context.get("_skip_resolved_stage_state_sync"):
             resolved_tasks = self.filtered(
                 lambda task: previous_stage_ids.get(task.id) != task.stage_id.id
-                and task.stage_id.name == "Resuelto"
+                and is_resolved_stage_name(task.stage_id.name)
                 and task.state != "1_done"
             )
             if resolved_tasks:

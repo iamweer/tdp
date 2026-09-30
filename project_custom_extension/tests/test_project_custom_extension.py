@@ -6,13 +6,18 @@ from odoo import Command, fields
 from odoo.exceptions import AccessError, ValidationError
 from odoo.tests import TransactionCase, new_test_user, tagged
 
-from ..hooks import _copy_field_if_empty, _hide_existing_subtasks
+from ..hooks import (
+    _copy_field_if_empty,
+    _hide_existing_subtasks,
+    mark_resolved_stage_tasks_done,
+)
 from ..models.project_project import (
     DASHBOARD_HEALTH_DEFAULTS,
     DASHBOARD_HEALTH_PARAMETERS,
     WARRANTY_ACTIVATION_PARAMETER,
     WARRANTY_VICTOR_LOGIN,
 )
+from ..models.project_task import is_resolved_stage_name
 
 
 @tagged("post_install", "-at_install")
@@ -75,6 +80,113 @@ class TestProjectCustomExtension(TransactionCase):
         ])
         tasks.write({"stage_id": stage.id})
         self.assertEqual(set(tasks.mapped("state")), {"1_done"})
+
+    def test_resolved_stage_name_variants(self):
+        for name in (
+            "Resuelto", "Resuelta", "RESUELTO", "resuelta", "Resueltos",
+            "RESUELTAS", "  Resuelto  ", "Resuelto.", "RESUÉLTO",
+        ):
+            self.assertTrue(is_resolved_stage_name(name), name)
+        for name in (
+            False, "", "Resolver", "No resuelto", "Resuelto parcialmente",
+            "En progreso",
+        ):
+            self.assertFalse(is_resolved_stage_name(name), name)
+
+    def test_resolved_stage_variants_mark_tasks_done(self):
+        stage_model = self.env["project.task.type"]
+        in_progress = stage_model.create({
+            "name": "En progreso",
+            "project_ids": [Command.link(self.project.id)],
+        })
+        for stage_name in ("Resuelta", "RESUELTO", " resueltas "):
+            stage = stage_model.create({
+                "name": stage_name,
+                "project_ids": [Command.link(self.project.id)],
+            })
+            task = self.env["project.task"].create({
+                "name": f"Tarea {stage_name}",
+                "project_id": self.project.id,
+                "stage_id": in_progress.id,
+            })
+            self.assertNotEqual(task.state, "1_done")
+            task.write({"stage_id": stage.id})
+            self.assertEqual(task.state, "1_done", stage_name)
+
+    def test_migration_marks_historical_resolved_tasks_done(self):
+        stage_model = self.env["project.task.type"]
+        task_model = self.env["project.task"]
+        in_progress = stage_model.create({
+            "name": "En progreso",
+            "project_ids": [Command.link(self.project.id)],
+        })
+        resolved = stage_model.create({
+            "name": "RESUELTAS",
+            "project_ids": [Command.link(self.project.id)],
+        })
+        self.project.write({
+            "allow_task_dependencies": True,
+        })
+        historical, canceled, recurring = task_model.create([
+            {"name": "Histórica", "project_id": self.project.id},
+            {"name": "Cancelada", "project_id": self.project.id},
+            {
+                "name": "Recurrente",
+                "project_id": self.project.id,
+                "recurring_task": True,
+                "repeat_interval": 1,
+                "repeat_unit": "week",
+                "repeat_type": "forever",
+            },
+        ])
+        blocked = task_model.create({
+            "name": "Bloqueada",
+            "project_id": self.project.id,
+            "stage_id": in_progress.id,
+            "depend_on_ids": [Command.link(historical.id)],
+        })
+        untouched = task_model.create({
+            "name": "Otra etapa",
+            "project_id": self.project.id,
+            "stage_id": in_progress.id,
+        })
+        # Simula datos previos a la regla: tareas en etapa resuelta sin cerrar.
+        self.env.flush_all()
+        self.env.cr.execute(
+            """
+            UPDATE project_task
+               SET stage_id = %s,
+                   state = CASE WHEN id = %s THEN '1_canceled'
+                                ELSE '01_in_progress' END
+             WHERE id IN %s
+            """,
+            [resolved.id, canceled.id, (historical.id, canceled.id, recurring.id)],
+        )
+        self.env.cr.execute(
+            "UPDATE project_task SET state = '04_waiting_normal' WHERE id = %s",
+            [blocked.id],
+        )
+        self.env.invalidate_all()
+        self.assertEqual(blocked.state, "04_waiting_normal")
+        recurrence_task_count = task_model.search_count([
+            ("recurrence_id", "=", recurring.recurrence_id.id),
+        ])
+
+        updated = mark_resolved_stage_tasks_done(self.env)
+
+        self.assertEqual(updated, historical | recurring)
+        self.assertEqual(historical.state, "1_done")
+        self.assertEqual(recurring.state, "1_done")
+        self.assertEqual(canceled.state, "1_canceled")
+        self.assertEqual(untouched.state, "01_in_progress")
+        self.assertEqual(blocked.state, "01_in_progress")
+        self.assertEqual(
+            task_model.search_count([
+                ("recurrence_id", "=", recurring.recurrence_id.id),
+            ]),
+            recurrence_task_count,
+        )
+        self.assertFalse(mark_resolved_stage_tasks_done(self.env))
 
     def test_warranty_display_formats(self):
         self.project.write({

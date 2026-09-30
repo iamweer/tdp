@@ -1,3 +1,10 @@
+import logging
+
+from .models.project_task import is_resolved_stage_name
+
+_logger = logging.getLogger(__name__)
+
+
 def _copy_field_if_empty(model, source_field, target_field):
     if source_field not in model._fields:
         return
@@ -86,6 +93,49 @@ def configure_project_security(env):
         todo_menu.write({"groups_id": [(6, 0, project_user_group.ids)]})
 
 
+def mark_resolved_stage_tasks_done(env):
+    """Marca como hechas las tareas que ya están en una etapa "Resuelto".
+
+    Se actualiza por SQL para no disparar el inverso de ``state``, que crearía
+    la siguiente ocurrencia de las tareas recurrentes, ni el seguimiento en el
+    chatter. Las tareas canceladas se conservan como están.
+    """
+    env.flush_all()
+    env.cr.execute("SELECT id, name FROM project_task_type")
+    stage_ids = [
+        stage_id
+        for stage_id, names in env.cr.fetchall()
+        if any(
+            is_resolved_stage_name(name)
+            for name in (names.values() if isinstance(names, dict) else [names])
+        )
+    ]
+    if not stage_ids:
+        return env["project.task"]
+
+    env.cr.execute(
+        """
+        UPDATE project_task
+           SET state = '1_done',
+               write_date = NOW() AT TIME ZONE 'UTC',
+               write_uid = %s
+         WHERE stage_id = ANY(%s)
+           AND state NOT IN ('1_done', '1_canceled')
+     RETURNING id
+        """,
+        [env.uid, stage_ids],
+    )
+    tasks = env["project.task"].browse(row[0] for row in env.cr.fetchall())
+    if tasks:
+        tasks.invalidate_recordset(["state", "write_date", "write_uid"])
+        tasks.modified(["state"])
+        env.flush_all()
+    _logger.info(
+        "Tareas en etapas resueltas marcadas como hechas: %s", len(tasks)
+    )
+    return tasks
+
+
 def post_init_hook(env):
     _copy_field_if_empty(
         env["project.task"],
@@ -105,3 +155,4 @@ def post_init_hook(env):
     _hide_existing_subtasks(env)
     configure_project_security(env)
     env["project.project"]._ensure_warranty_automation_activation_date()
+    mark_resolved_stage_tasks_done(env)
