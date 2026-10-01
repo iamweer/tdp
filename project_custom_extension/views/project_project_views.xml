@@ -10,6 +10,38 @@
                 <field name="warranty_end_date"/>
                 <field name="company_type"/>
             </field>
+            <page name="description" position="after">
+                <page name="weighted_progress" string="Avance">
+                    <group>
+                        <group>
+                            <field name="weighted_progress" widget="progressbar"/>
+                        </group>
+                        <group>
+                            <field name="progress_weight_total"
+                                   decoration-success="progress_weight_total == 100"
+                                   decoration-warning="progress_weight_total != 100"/>
+                        </group>
+                    </group>
+                    <div class="text-muted mb-2">
+                        Asigne a cada tarea principal su peso en el proyecto (la suma no puede superar 100%).
+                        El peso se reparte en partes iguales entre sus subtareas no canceladas y el avance
+                        solo considera las tareas completadas. Los totales se actualizan al guardar.
+                    </div>
+                    <field name="main_task_ids"
+                           context="{'default_project_id': id}">
+                        <list editable="bottom" create="0" delete="0" default_order="sequence, name, id">
+                            <field name="sequence" widget="handle"/>
+                            <field name="name" readonly="1"/>
+                            <field name="user_ids" widget="many2many_avatar_user" readonly="1" optional="show"/>
+                            <field name="stage_id" readonly="1" optional="show"/>
+                            <field name="state" widget="project_task_state_selection" readonly="1" optional="show"/>
+                            <field name="subtask_count" string="Subtareas" readonly="1" optional="show"/>
+                            <field name="project_weight" sum="Total"/>
+                            <field name="project_progress_percentage" widget="progressbar"/>
+                        </list>
+                    </field>
+                </page>
+            </page>
         </field>
     </record>
 

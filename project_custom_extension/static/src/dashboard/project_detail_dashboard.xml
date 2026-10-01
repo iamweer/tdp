@@ -135,11 +135,11 @@
                             <div t-if="state.data.progress.mode === 'parents'"
                                  class="o_project_detail_dashboard_parent_progress_body">
                                 <div class="o_project_detail_dashboard_parent_progress_intro">
-                                    <strong>Avance ponderado por fase</strong>
+                                    <strong>Avance ponderado por tarea principal</strong>
                                     <span t-if="state.data.progress.percentage !== false">
                                         Avance global: <t t-out="formatPercentage(state.data.progress.percentage)"/>%
                                     </span>
-                                    <span t-else="">Planificación incompleta</span>
+                                    <span t-else="">Sin pesos asignados</span>
                                 </div>
                                 <div class="o_project_detail_dashboard_parent_progress">
                                     <button t-foreach="parentProgress"
@@ -179,7 +179,7 @@
                                         </strong>
                                         <strong t-else="">—</strong>
                                         <span t-if="state.data.progress.percentage !== false">Ejecución</span>
-                                        <span t-else="">Planificación incompleta</span>
+                                        <span t-else="">Sin pesos asignados</span>
                                     </div>
                                 </button>
                                 <div class="o_project_detail_dashboard_progress_metrics">

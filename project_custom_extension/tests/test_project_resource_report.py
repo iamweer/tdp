@@ -120,10 +120,39 @@ class TestProjectResourceReport(TransactionCase):
         rows = self._rows(self.project)
         self.assertEqual([row["collaborator_id"] for row in rows], [self.alice.id])
 
-    def test_archived_users_are_not_collaborators(self):
+    def test_archived_users_are_flagged_inactive(self):
         self.bob.action_archive()
         rows = self._rows(self.project)
-        self.assertEqual([row["collaborator_id"] for row in rows], [self.alice.id])
+        self.assertEqual(
+            [(row["collaborator_id"], row["collaborator_active"]) for row in rows],
+            [(self.alice.id, True), (self.bob.id, False)],
+        )
+
+    def test_client_portal_and_odoobot_users_are_not_collaborators(self):
+        client = new_test_user(
+            self.env,
+            login="resource_report_client",
+            name="Cliente Recurso",
+            groups="project_custom_extension.group_project_client",
+        )
+        portal = new_test_user(
+            self.env,
+            login="resource_report_portal",
+            name="Portal Recurso",
+            groups="base.group_portal",
+        )
+        self.Task.create({
+            "name": "Tarea con clientes",
+            "project_id": self.project.id,
+            "user_ids": [Command.set(
+                (client | portal | self.env.ref("base.user_root")).ids
+            )],
+        })
+        rows = self._rows(self.project)
+        self.assertEqual(
+            [row["collaborator_id"] for row in rows],
+            [self.alice.id, self.bob.id],
+        )
 
     def test_warranty_status(self):
         today = date(2026, 6, 15)

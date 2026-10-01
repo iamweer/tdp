@@ -35,6 +35,7 @@ function makeRow(values) {
         pm_id: 2,
         pm_name: "PM Uno",
         collaborator_id: false,
+        collaborator_active: true,
         collaborator_name: "",
         identification: "",
         email: "",
@@ -65,6 +66,8 @@ function makePayload() {
                 project_name: "Proyecto B",
                 project_company_type: "abi",
                 progress: 80,
+                date_start: "2025-03-01",
+                date_end: "2025-11-30",
                 warranty_status: "active",
                 collaborator_id: 100,
                 collaborator_name: "Ana",
@@ -77,6 +80,8 @@ function makePayload() {
                 project_name: "Proyecto vacío",
                 project_company_type: false,
                 progress: false,
+                date_start: false,
+                date_end: false,
             }),
             makeRow({
                 project_id: 40,
@@ -165,6 +170,77 @@ describe("informe de proyectos y recursos", () => {
         expect(".o_resource_report_project_link").toHaveText("Proyecto vacío");
     });
 
+    test("hides inactive collaborators unless the filter is enabled", async () => {
+        mockService("orm", {
+            call() {
+                const payload = makePayload();
+                payload.rows.push(
+                    makeRow({
+                        collaborator_id: 103,
+                        collaborator_active: false,
+                        collaborator_name: "Dora",
+                    }),
+                    makeRow({
+                        project_id: 50,
+                        project_name: "Proyecto inactivo",
+                        collaborator_id: 104,
+                        collaborator_active: false,
+                        collaborator_name: "Eli",
+                    })
+                );
+                return payload;
+            },
+        });
+        const component = await mountWithCleanup(ProjectResourceReport, { noMainContainer: true });
+
+        expect(component.state.filters.includeInactiveUsers).toBe(false);
+        expect(".o_resource_report_group").toHaveCount(4);
+        expect(".o_resource_report_no_people").toHaveCount(2);
+        expect(component.kpis.collaborators).toBe(2);
+        expect(component.kpis.withoutCollaborators).toBe(2);
+
+        component.setFilter("includeInactiveUsers", true);
+        await animationFrame();
+        expect(".o_resource_report_group").toHaveCount(4);
+        expect(".o_resource_report_no_people").toHaveCount(1);
+        expect(component.kpis.collaborators).toBe(4);
+        expect(".badge:contains(Inactivo)").toHaveCount(2);
+    });
+
+    test("filters by employee, year and date range", async () => {
+        const component = await mountWithCleanup(ProjectResourceReport, { noMainContainer: true });
+        const projectNames = () => component.groups.map((group) => group.project.project_name);
+
+        expect(component.collaboratorOptions).toEqual([[100, "Ana"], [101, "Beto"], [102, "Carla"]]);
+        expect(component.yearOptions).toEqual(["2026", "2025"]);
+
+        component.setFilter("collaboratorId", "101");
+        await animationFrame();
+        expect(projectNames()).toEqual(["Proyecto A"]);
+        expect(component.kpis.assignments).toBe(1);
+
+        component.clearFilters();
+        component.setFilter("year", "2025");
+        await animationFrame();
+        expect(projectNames()).toEqual(["Proyecto B"]);
+
+        component.clearFilters();
+        component.setFilter("dateFrom", "2025-12-01");
+        await animationFrame();
+        expect(projectNames()).toEqual(["Proyecto A"]);
+
+        component.setFilter("dateFrom", "2025-06-01");
+        component.setFilter("dateTo", "2025-12-31");
+        await animationFrame();
+        expect(projectNames()).toEqual(["Proyecto B"]);
+
+        component.setFilter("dateFrom", "2026-02-01");
+        component.setFilter("dateTo", "2026-01-01");
+        await animationFrame();
+        expect(".o_resource_report_filter_error").toHaveCount(1);
+        expect(projectNames()).toEqual(["Proyecto A", "Proyecto B", "Proyecto vacío"]);
+    });
+
     test("sorting by progress reorders project groups", async () => {
         const component = await mountWithCleanup(ProjectResourceReport, { noMainContainer: true });
 
@@ -191,6 +267,27 @@ describe("informe de proyectos y recursos", () => {
             ["project_id", "=", 10],
             ["user_ids", "in", [100]],
         ]);
+    });
+
+    test("toggles the indicators and remembers the choice", async () => {
+        browser.localStorage.removeItem(
+            `project_custom_extension.resource_report.show_kpis.${session.db}.${session.uid}`
+        );
+        const component = await mountWithCleanup(ProjectResourceReport, { noMainContainer: true });
+
+        expect(".o_resource_report_kpis").toHaveCount(1);
+        expect(".o_resource_report_year select").toHaveCount(1);
+        document.querySelector(".o_resource_report_btn--icon").click();
+        await animationFrame();
+        expect(".o_resource_report_kpis").toHaveCount(0);
+        expect(browser.localStorage.getItem(component.kpisStorageKey)).toBe("false");
+
+        component.clearFilters();
+        await animationFrame();
+        expect(".o_resource_report_kpis").toHaveCount(0);
+        document.querySelector(".o_resource_report_btn--icon").click();
+        await animationFrame();
+        expect(".o_resource_report_kpis").toHaveCount(1);
     });
 
     test("persists filters per user", async () => {

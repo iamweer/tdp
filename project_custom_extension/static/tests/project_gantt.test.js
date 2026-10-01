@@ -7,10 +7,14 @@ import {
     mountWithCleanup,
 } from "@web/../tests/web_test_helpers";
 
+import { defineMailModels } from "@mail/../tests/mail_test_helpers";
+
 import {
     buildProjectGanttCsv,
     ProjectGantt,
 } from "../src/gantt/project_gantt";
+
+defineMailModels();
 
 
 function makeData(projectId = 10) {

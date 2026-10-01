@@ -15,10 +15,15 @@ const DEFAULT_FILTERS = {
     customerId: "",
     stageId: "",
     pmId: "",
+    collaboratorId: "",
+    year: "",
+    dateFrom: "",
+    dateTo: "",
     projectCompany: "",
     collaboratorCompany: "",
     warranty: "",
     includeClosed: false,
+    includeInactiveUsers: false,
     onlyWithoutCollaborators: false,
 };
 
@@ -66,6 +71,7 @@ export class ProjectResourceReport extends Component {
             error: false,
             filters: { ...DEFAULT_FILTERS, ...this.getStoredFilters() },
             sort: { key: "project", asc: true },
+            showKpis: this.getStoredShowKpis(),
         });
         this.requestSequence = 0;
         onWillStart(() => this.loadReport());
@@ -83,6 +89,27 @@ export class ProjectResourceReport extends Component {
             );
         } catch {
             return {};
+        }
+    }
+
+    get kpisStorageKey() {
+        return `project_custom_extension.resource_report.show_kpis.${session.db}.${session.uid}`;
+    }
+
+    getStoredShowKpis() {
+        try {
+            return browser.localStorage.getItem(this.kpisStorageKey) !== "false";
+        } catch {
+            return true;
+        }
+    }
+
+    toggleKpis() {
+        this.state.showKpis = !this.state.showKpis;
+        try {
+            browser.localStorage.setItem(this.kpisStorageKey, String(this.state.showKpis));
+        } catch {
+            // A UI preference; the report works without persistence.
         }
     }
 
@@ -134,6 +161,53 @@ export class ProjectResourceReport extends Component {
         );
     }
 
+    get collaboratorOptions() {
+        const collaborators = new Map();
+        for (const row of this.collaboratorRows) {
+            if (row.collaborator_id) {
+                collaborators.set(row.collaborator_id, row.collaborator_name);
+            }
+        }
+        return [...collaborators].sort((a, b) => a[1].localeCompare(b[1]));
+    }
+
+    get yearOptions() {
+        const years = new Set();
+        for (const row of this.state.data?.rows || []) {
+            const [start, end] = this.projectPeriod(row);
+            if (!start) {
+                continue;
+            }
+            for (let year = Number(start.slice(0, 4)); year <= Number(end.slice(0, 4)); year++) {
+                years.add(String(year));
+            }
+        }
+        return [...years].sort().reverse();
+    }
+
+    get invalidDateRange() {
+        const { dateFrom, dateTo } = this.state.filters;
+        return Boolean(dateFrom && dateTo && dateFrom > dateTo);
+    }
+
+    /**
+     * Estimated project period as ISO strings; a missing bound takes the
+     * other one, and a project without dates has no period.
+     */
+    projectPeriod(row) {
+        const start = row.date_start || row.date_end;
+        const end = row.date_end || row.date_start;
+        return start ? [start, end] : [false, false];
+    }
+
+    periodOverlaps(row, from, to) {
+        const [start, end] = this.projectPeriod(row);
+        if (!start) {
+            return false;
+        }
+        return (!from || end >= from) && (!to || start <= to);
+    }
+
     get companyOptions() {
         return this.state.data?.filters.company_types || [];
     }
@@ -174,6 +248,22 @@ export class ProjectResourceReport extends Component {
         if (filters.pmId && String(row.pm_id) !== filters.pmId) {
             return false;
         }
+        if (filters.collaboratorId && String(row.collaborator_id) !== filters.collaboratorId) {
+            return false;
+        }
+        if (
+            filters.year
+            && !this.periodOverlaps(row, `${filters.year}-01-01`, `${filters.year}-12-31`)
+        ) {
+            return false;
+        }
+        if (
+            (filters.dateFrom || filters.dateTo)
+            && !this.invalidDateRange
+            && !this.periodOverlaps(row, filters.dateFrom, filters.dateTo)
+        ) {
+            return false;
+        }
         if (filters.projectCompany && row.project_company_type !== filters.projectCompany) {
             return false;
         }
@@ -210,8 +300,44 @@ export class ProjectResourceReport extends Component {
         return true;
     }
 
+    get collaboratorRows() {
+        const rows = this.state.data?.rows || [];
+        if (this.state.filters.includeInactiveUsers) {
+            return rows;
+        }
+        const result = [];
+        const placeholders = new Map();
+        const projectsWithRows = new Set();
+        for (const row of rows) {
+            if (row.collaborator_active === false) {
+                // Keep the project visible, as without collaborators, when
+                // all of its collaborators are inactive.
+                if (!placeholders.has(row.project_id)) {
+                    placeholders.set(row.project_id, {
+                        ...row,
+                        collaborator_id: false,
+                        collaborator_active: true,
+                        collaborator_name: "",
+                        identification: "",
+                        email: "",
+                        collaborator_company_type: false,
+                    });
+                }
+                continue;
+            }
+            projectsWithRows.add(row.project_id);
+            result.push(row);
+        }
+        for (const [projectId, placeholder] of placeholders) {
+            if (!projectsWithRows.has(projectId)) {
+                result.push(placeholder);
+            }
+        }
+        return result;
+    }
+
     get filteredRows() {
-        return (this.state.data?.rows || []).filter((row) => this.rowMatches(row));
+        return this.collaboratorRows.filter((row) => this.rowMatches(row));
     }
 
     // ------------------------------------------------------------------

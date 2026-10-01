@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta
 
 from lxml import etree
 
-from odoo import _, api, fields, models
+from odoo import Command, _, api, fields, models
 from odoo.exceptions import AccessError, ValidationError
 from odoo.osv import expression
 
@@ -47,6 +47,15 @@ COMPANY_TYPE_SELECTION = [
     ("abi", "ABI"),
 ]
 
+# Etapas que recibe cada proyecto nuevo: (nombre, plegada).
+DEFAULT_TASK_STAGES = (
+    ("NUEVO", False),
+    ("EN CURSO", False),
+    ("VALIDACION CLIENTE", False),
+    ("VALIDACION INTERNA", False),
+    ("RESUELTO", True),
+)
+
 
 class ProjectProject(models.Model):
     _inherit = "project.project"
@@ -79,7 +88,37 @@ class ProjectProject(models.Model):
             or not self.env.user.has_group("project.group_project_user")
         ):
             raise AccessError(_("No tiene permiso para crear proyectos."))
-        return super().create(vals_list)
+        projects = super().create(vals_list)
+        if not self.env.context.get("default_type_ids"):
+            projects_without_stages = self.browse([
+                project.id
+                for project, values in zip(projects, vals_list)
+                if "type_ids" not in values
+            ])
+            projects_without_stages._create_default_task_stages()
+        return projects
+
+    def _create_default_task_stages(self):
+        """Crea las etapas por defecto propias de cada proyecto."""
+        # Los usuarios de proyecto solo pueden crear etapas personales; estas
+        # etapas compartidas del proyecto se crean como parte de su alta.
+        self.env["project.task.type"].sudo().create([
+            {
+                "name": name,
+                "sequence": sequence,
+                "fold": fold,
+                "project_ids": [Command.link(project.id)],
+            }
+            for project in self
+            for sequence, (name, fold) in enumerate(DEFAULT_TASK_STAGES, 1)
+        ])
+
+    @api.model
+    def name_create(self, name):
+        # La creación rápida nativa agrega una etapa "New"; aquí las etapas
+        # por defecto ya se crean en ``create``.
+        project = self.create({self._rec_name: name})
+        return project.id, project.display_name
 
     def write(self, vals):
         if self.env.su or self.env.user.has_group("project.group_project_manager"):
@@ -128,6 +167,40 @@ class ProjectProject(models.Model):
         string="Empresa",
         tracking=True,
     )
+    main_task_ids = fields.One2many(
+        "project.task",
+        "project_id",
+        string="Tareas principales",
+        domain=[("parent_id", "=", False)],
+    )
+    progress_weight_total = fields.Float(
+        string="Peso asignado (%)",
+        digits=(5, 2),
+        compute="_compute_weighted_progress",
+    )
+    weighted_progress = fields.Float(
+        string="Avance del proyecto (%)",
+        digits=(5, 1),
+        compute="_compute_weighted_progress",
+    )
+
+    @api.depends(
+        "main_task_ids.project_weight",
+        "main_task_ids.state",
+        "main_task_ids.child_ids.state",
+    )
+    def _compute_weighted_progress(self):
+        for project in self:
+            # Uses saved values: the form shows the totals after saving.
+            if not project._origin:
+                project.progress_weight_total = 0.0
+                project.weighted_progress = 0.0
+                continue
+            progress = self._get_project_execution_progress(project._origin)
+            project.progress_weight_total = sum(
+                phase["weight"] for phase in progress["phases"]
+            )
+            project.weighted_progress = progress["percentage"] or 0.0
 
     @api.depends("warranty_start_date", "warranty_end_date")
     def _compute_warranty_period_display(self):
@@ -166,15 +239,13 @@ class ProjectProject(models.Model):
                 )
 
     @api.model
-    def _get_task_date_in_context(self, value):
-        if not value:
-            return False
-        timestamp = fields.Datetime.to_datetime(value)
-        return fields.Datetime.context_timestamp(self, timestamp).date()
-
-    @api.model
     def _get_project_execution_progress(self, project, tasks=None):
-        """Compute planned progress from dated top-level phases and leaf tasks."""
+        """Compute progress from the weight of each top-level task.
+
+        Each main task contributes ``project_weight`` percent of the project.
+        That weight is split equally among its non-canceled subtasks, and
+        recursively among theirs, so only task completion counts (no dates).
+        """
         if tasks is None:
             tasks = self.env["project.task"].search([
                 ("project_id", "=", project.id),
@@ -185,48 +256,47 @@ class ProjectProject(models.Model):
         )
         children_by_parent = {}
         for task in tasks:
-            if task.parent_id:
+            if task.parent_id and task.state != "1_canceled":
                 children_by_parent.setdefault(task.parent_id.id, []).append(task)
-        phases = tasks.filtered(lambda task: not task.parent_id)
+        phases = tasks.filtered(lambda task: not task.parent_id).sorted(
+            lambda task: (task.sequence, task.name or "", task.id)
+        )
         if not phases:
             return {"percentage": False, "phases": []}
 
+        def completion(task):
+            """Return (fraction, completed leaves, counted leaves)."""
+            children = children_by_parent.get(task.id, [])
+            if not children:
+                done = task.state == "1_done"
+                return float(done), int(done), 1
+            fractions, completed, total = [], 0, 0
+            for child in children:
+                child_fraction, child_completed, child_total = completion(child)
+                fractions.append(child_fraction)
+                completed += child_completed
+                total += child_total
+            return sum(fractions) / len(fractions), completed, total
+
         phase_values = []
         for phase in phases:
-            start_date = self._get_task_date_in_context(phase.planned_date_begin)
-            end_date = self._get_task_date_in_context(phase.date_deadline)
-            if not start_date or not end_date or start_date > end_date:
-                return {"percentage": False, "phases": []}
-
-            duration_days = (end_date - start_date).days + 1
-            leaf_tasks = []
-            pending = list(children_by_parent.get(phase.id, []))
-            while pending:
-                current = pending.pop()
-                children = children_by_parent.get(current.id, [])
-                if children:
-                    pending.extend(children)
-                else:
-                    leaf_tasks.append(current)
-            if not leaf_tasks:
-                leaf_tasks = [phase]
-            completed_count = sum(task.state == "1_done" for task in leaf_tasks)
-            phase_percentage = completed_count / len(leaf_tasks)
+            if phase.state == "1_canceled":
+                fraction, completed_count, total_count = 0.0, 0, 0
+            else:
+                fraction, completed_count, total_count = completion(phase)
             phase_values.append({
                 "task": phase,
-                "duration_days": duration_days,
+                "weight": phase.project_weight,
                 "completed_count": completed_count,
-                "total_count": len(leaf_tasks),
-                "percentage": phase_percentage,
+                "total_count": total_count,
+                "percentage": fraction,
             })
 
-        total_days = sum(phase["duration_days"] for phase in phase_values)
-        if not total_days:
-            return {"percentage": False, "phases": []}
+        if not any(phase["weight"] for phase in phase_values):
+            return {"percentage": False, "phases": phase_values}
         percentage = sum(
-            phase["duration_days"] * phase["percentage"]
-            for phase in phase_values
-        ) * 100 / total_days
+            phase["weight"] * phase["percentage"] for phase in phase_values
+        )
         return {
             "percentage": round(percentage, 1),
             "phases": phase_values,
@@ -909,12 +979,7 @@ class ProjectProject(models.Model):
             "percentage": round(item["percentage"] * 100, 1),
             "completed_subtasks": item["completed_count"],
             "total_subtasks": item["total_count"],
-            "duration_days": item["duration_days"],
-            "weight_percentage": round(
-                item["duration_days"] * 100
-                / sum(value["duration_days"] for value in phase_progress),
-                1,
-            ) if phase_progress else 0,
+            "weight_percentage": round(item["weight"], 2),
             "model": "project.task",
             "domain": [
                 ("project_id", "=", project.id),
@@ -924,7 +989,10 @@ class ProjectProject(models.Model):
         } for item in phase_progress]
         progress_mode = (
             "parents"
-            if parent_progress and len(main_tasks) <= 10
+            if (
+                execution_progress["percentage"] is not False
+                and len(main_tasks) <= 10
+            )
             else "general"
         )
 
@@ -1323,13 +1391,27 @@ class ProjectProject(models.Model):
         progress_by_project = self._get_project_execution_progress_by_project(
             projects, tasks
         )
+        client_group = self.env.ref("project_custom_extension.group_project_client")
+        root_user = self.env.ref("base.user_root")
+
+        def is_resource(user):
+            # Customers (client group or portal) and OdooBot are not resources.
+            return (
+                user != root_user
+                and not user.share
+                and client_group not in user.groups_id
+            )
+
         users_by_project = {}
         for task in tasks:
             users_by_project.setdefault(
                 task.project_id.id, self.env["res.users"]
             )
-            # Archived users (including OdooBot) are no longer project resources.
-            users_by_project[task.project_id.id] |= task.user_ids.filtered("active")
+            # Archived users are kept, flagged inactive, so the report can
+            # show them on demand.
+            users_by_project[task.project_id.id] |= task.with_context(
+                active_test=False
+            ).user_ids.filtered(is_resource)
 
         all_users = self.env["res.users"].concat(*users_by_project.values())
         # HR identification data is restricted to HR officers; access to this
@@ -1391,6 +1473,7 @@ class ProjectProject(models.Model):
                 rows.append(dict(
                     project_values,
                     collaborator_id=False,
+                    collaborator_active=True,
                     collaborator_name="",
                     identification="",
                     email="",
@@ -1402,6 +1485,7 @@ class ProjectProject(models.Model):
                 rows.append(dict(
                     project_values,
                     collaborator_id=user.id,
+                    collaborator_active=user.active,
                     collaborator_name=user.display_name,
                     identification=(employee and employee.identification_id) or "",
                     email=(employee and employee.work_email) or user.email or "",

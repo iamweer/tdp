@@ -10,6 +10,23 @@
                     </div>
                     <div class="o_resource_report_actions">
                         <button type="button"
+                                class="o_resource_report_btn o_resource_report_btn--icon"
+                                t-att-aria-pressed="state.showKpis"
+                                t-att-title="state.showKpis ? 'Ocultar indicadores' : 'Mostrar indicadores'"
+                                t-att-aria-label="state.showKpis ? 'Ocultar indicadores' : 'Mostrar indicadores'"
+                                t-on-click="toggleKpis">
+                            <i t-attf-class="fa #{state.showKpis ? 'fa-eye-slash' : 'fa-bar-chart'}" aria-hidden="true"/>
+                        </button>
+                        <label t-if="state.data" class="o_resource_report_year">
+                            <span>Año</span>
+                            <select t-on-change="(ev) => this.onInputFilter('year', ev)">
+                                <option value="" t-att-selected="!state.filters.year">Todos</option>
+                                <option t-foreach="yearOptions" t-as="year" t-key="year"
+                                        t-att-value="year" t-att-selected="state.filters.year === year"
+                                        t-out="year"/>
+                            </select>
+                        </label>
+                        <button type="button"
                                 class="o_resource_report_btn o_resource_report_btn--tonal"
                                 t-on-click="loadReport"
                                 t-att-disabled="state.loading">
@@ -48,7 +65,7 @@
                     <t t-set="filters" t-value="state.filters"/>
                     <t t-set="projectGroups" t-value="groups"/>
 
-                    <section class="o_resource_report_kpis" aria-label="Indicadores">
+                    <section t-if="state.showKpis" class="o_resource_report_kpis" aria-label="Indicadores">
                         <div class="o_resource_report_kpi">
                             <span class="o_resource_report_kpi_icon"><i class="fa fa-folder-open" aria-hidden="true"/></span>
                             <span class="o_resource_report_kpi_label">Proyectos</span>
@@ -131,6 +148,15 @@
                             </select>
                         </label>
                         <label class="o_resource_report_select">
+                            <span>Empleado</span>
+                            <select t-on-change="(ev) => this.onInputFilter('collaboratorId', ev)">
+                                <option value="" t-att-selected="!filters.collaboratorId">Todos</option>
+                                <option t-foreach="collaboratorOptions" t-as="option" t-key="option[0]"
+                                        t-att-value="option[0]" t-att-selected="isSelected('collaboratorId', option[0])"
+                                        t-out="option[1]"/>
+                            </select>
+                        </label>
+                        <label class="o_resource_report_select">
                             <span>Garantía</span>
                             <select t-on-change="(ev) => this.onInputFilter('warranty', ev)">
                                 <option value="" t-att-selected="!filters.warranty">Todas</option>
@@ -140,6 +166,24 @@
                                 <option value="none" t-att-selected="filters.warranty === 'none'">Sin garantía</option>
                             </select>
                         </label>
+                        <label class="o_resource_report_select">
+                            <span>Fecha inicio</span>
+                            <input type="date" name="date_from"
+                                   t-att-value="filters.dateFrom"
+                                   t-att-max="filters.dateTo or undefined"
+                                   t-on-change="(ev) => this.onInputFilter('dateFrom', ev)"/>
+                        </label>
+                        <label class="o_resource_report_select">
+                            <span>Fecha fin</span>
+                            <input type="date" name="date_to"
+                                   t-att-value="filters.dateTo"
+                                   t-att-min="filters.dateFrom or undefined"
+                                   t-on-change="(ev) => this.onInputFilter('dateTo', ev)"/>
+                        </label>
+                        <div t-if="invalidDateRange" class="o_resource_report_filter_error" role="alert">
+                            <i class="fa fa-exclamation-circle" aria-hidden="true"/>
+                            La fecha inicio no puede ser posterior a la fecha fin; el rango no se aplica.
+                        </div>
 
                         <div class="o_resource_report_chip_row">
                             <div class="o_resource_report_chip_group" role="group" aria-label="Empresa del proyecto">
@@ -176,6 +220,13 @@
                                        t-on-change="(ev) => this.onToggleFilter('includeClosed', ev)"/>
                                 <span class="o_resource_report_switch_track"/>
                                 <span>Incluir etapas cerradas</span>
+                            </label>
+                            <label class="o_resource_report_switch">
+                                <input type="checkbox" role="switch"
+                                       t-att-checked="filters.includeInactiveUsers"
+                                       t-on-change="(ev) => this.onToggleFilter('includeInactiveUsers', ev)"/>
+                                <span class="o_resource_report_switch_track"/>
+                                <span>Incluir usuarios inactivos</span>
                             </label>
                             <label class="o_resource_report_switch">
                                 <input type="checkbox" role="switch"
@@ -277,6 +328,8 @@
                                                         title="Ver tareas del colaborador en el proyecto">
                                                     <span class="o_resource_report_avatar" t-out="row.collaborator_name.charAt(0).toUpperCase()" aria-hidden="true"/>
                                                     <span t-out="row.collaborator_name"/>
+                                                    <span t-if="row.collaborator_active === false"
+                                                          class="badge text-bg-secondary ms-1">Inactivo</span>
                                                 </button>
                                             </td>
                                             <td class="o_resource_report_nowrap" t-out="row.identification or '—'"/>

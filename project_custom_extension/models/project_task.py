@@ -5,6 +5,7 @@ from lxml import etree
 
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, ValidationError
+from odoo.tools import float_compare, float_repr
 
 RESOLVED_STAGE_NAME_PATTERN = re.compile(r"^resuelt[oa]s?$")
 
@@ -226,6 +227,65 @@ class ProjectTask(models.Model):
         store=True,
         index=True,
     )
+
+    project_weight = fields.Float(
+        string="Peso en el proyecto (%)",
+        digits=(5, 2),
+        default=0.0,
+        tracking=True,
+        help="Porcentaje del avance del proyecto que representa esta tarea "
+        "principal. Se reparte en partes iguales entre sus subtareas.",
+    )
+    project_progress_percentage = fields.Float(
+        string="Avance de la tarea (%)",
+        digits=(5, 1),
+        compute="_compute_project_progress_percentage",
+    )
+
+    @api.depends("state", "child_ids.state", "project_id")
+    def _compute_project_progress_percentage(self):
+        self.project_progress_percentage = 0.0
+        tasks = self.filtered(
+            lambda task: task._origin and task.project_id and not task.parent_id
+        )
+        Project = self.env["project.project"]
+        for project in tasks.project_id:
+            progress = Project._get_project_execution_progress(project._origin)
+            fraction_by_task = {
+                phase["task"].id: phase["percentage"]
+                for phase in progress["phases"]
+            }
+            for task in tasks.filtered(lambda task: task.project_id == project):
+                task.project_progress_percentage = round(
+                    fraction_by_task.get(task._origin.id, 0.0) * 100, 1
+                )
+
+    @api.constrains("project_weight", "parent_id", "project_id", "active")
+    def _check_project_weight(self):
+        for task in self:
+            if not 0 <= task.project_weight <= 100:
+                raise ValidationError(
+                    _("El peso de una tarea debe estar entre 0% y 100%.")
+                )
+        projects = self.filtered(
+            lambda task: not task.parent_id and task.project_weight
+        ).project_id
+        for project in projects:
+            # The limit applies to every main task, including those hidden
+            # from the current user by record rules.
+            main_tasks = self.sudo().search([
+                ("project_id", "=", project.id),
+                ("parent_id", "=", False),
+            ])
+            total = sum(main_tasks.mapped("project_weight"))
+            if float_compare(total, 100, precision_digits=2) > 0:
+                raise ValidationError(_(
+                    "La suma de los pesos de las tareas principales del "
+                    "proyecto %(project)s es %(total)s%% y no puede superar "
+                    "el 100%%.",
+                    project=project.display_name,
+                    total=float_repr(total, 2),
+                ))
 
     @api.depends("hierarchical_priority")
     def _compute_hierarchical_priority_order(self):

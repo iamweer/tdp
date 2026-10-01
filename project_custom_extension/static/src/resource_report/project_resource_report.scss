@@ -75,7 +75,28 @@
 .o_resource_report_actions {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 8px;
+}
+
+.o_resource_report_year {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 0.875rem;
+    font-weight: 500;
+
+    select {
+        height: 40px;
+        min-width: 96px;
+        padding: 0 12px;
+        border: 1px solid var(--md-sys-color-outline);
+        border-radius: var(--md-sys-shape-full);
+        background: var(--md-sys-color-surface-container-lowest);
+        color: var(--md-sys-color-on-surface);
+    }
 }
 
 // Buttons ---------------------------------------------------------------
@@ -116,6 +137,19 @@
         border: 1px solid var(--md-sys-color-outline);
         background: transparent;
         color: var(--md-sys-color-primary);
+
+        &:hover:not(:disabled) {
+            background: rgba(7, 86, 187, 0.08);
+        }
+    }
+
+    &--icon {
+        justify-content: center;
+        width: 40px;
+        padding: 0;
+        border: 1px solid var(--md-sys-color-outline);
+        background: transparent;
+        color: var(--md-sys-color-on-surface-variant);
 
         &:hover:not(:disabled) {
             background: rgba(7, 86, 187, 0.08);
@@ -298,16 +332,16 @@
     display: flex;
     flex-wrap: wrap;
     align-items: flex-end;
-    gap: 12px;
+    gap: 8px 10px;
     margin-bottom: 16px;
-    padding: 16px;
+    padding: 12px;
     border-radius: var(--md-sys-shape-large);
     background: var(--md-sys-color-surface-container-low);
 }
 
 .o_resource_report_search {
     position: relative;
-    flex: 1 1 280px;
+    flex: 1 1 220px;
     min-width: 0;
 
     > i {
@@ -320,7 +354,7 @@
 
     input {
         width: 100%;
-        height: 48px;
+        height: 40px;
         padding: 0 16px 0 44px;
         border: 0;
         border-radius: var(--md-sys-shape-full);
@@ -331,9 +365,9 @@
 
 .o_resource_report_select {
     display: flex;
-    flex: 1 1 170px;
+    flex: 1 1 130px;
     flex-direction: column;
-    min-width: 140px;
+    min-width: 120px;
     margin: 0;
 
     > span {
@@ -343,14 +377,21 @@
         font-weight: 500;
     }
 
-    select {
-        height: 48px;
+    select,
+    input {
+        height: 40px;
         padding: 0 12px;
         border: 1px solid var(--md-sys-color-outline);
         border-radius: var(--md-sys-shape-small);
         background: var(--md-sys-color-surface-container-lowest);
         color: var(--md-sys-color-on-surface);
     }
+}
+
+.o_resource_report_filter_error {
+    flex: 1 1 100%;
+    color: var(--md-sys-color-on-error-container);
+    font-size: 0.875rem;
 }
 
 .o_resource_report_chip_row {

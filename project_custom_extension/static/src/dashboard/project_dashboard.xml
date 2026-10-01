@@ -106,7 +106,7 @@
                                     <strong t-if="project.progress !== false" class="o_project_dashboard_progress_value">
                                         <t t-out="formatPercentage(project.progress)"/>%
                                     </strong>
-                                    <strong t-else="" class="o_project_dashboard_progress_value">Planificación incompleta</strong>
+                                    <strong t-else="" class="o_project_dashboard_progress_value">Sin pesos asignados</strong>
                                     <i class="fa fa-chevron-right" aria-hidden="true"/>
                                 </button>
                             </div>

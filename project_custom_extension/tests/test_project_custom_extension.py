@@ -220,6 +220,51 @@ class TestProjectCustomExtension(TransactionCase):
                 "warranty_end_date": date(2026, 1, 31),
             })
 
+    def test_new_project_gets_its_own_default_stages(self):
+        expected = [
+            "NUEVO",
+            "EN CURSO",
+            "VALIDACION CLIENTE",
+            "VALIDACION INTERNA",
+            "RESUELTO",
+        ]
+        stages = self.project.type_ids.sorted("sequence")
+        self.assertEqual(stages.mapped("name"), expected)
+        self.assertEqual(stages.mapped("fold"), [False] * 4 + [True])
+        self.assertTrue(is_resolved_stage_name(stages[-1].name))
+
+        other_project = self.env["project.project"].create({"name": "Otro"})
+        self.assertFalse(other_project.type_ids & self.project.type_ids)
+        self.assertEqual(other_project.type_ids.project_ids, other_project)
+
+        project_id, _name = self.env["project.project"].name_create("Rápido")
+        quick_project = self.env["project.project"].browse(project_id)
+        self.assertEqual(
+            quick_project.type_ids.sorted("sequence").mapped("name"),
+            expected,
+        )
+
+        copied_project = self.project.copy()
+        self.assertEqual(copied_project.type_ids, self.project.type_ids)
+
+        explicit_stage = self.env["project.task.type"].create({"name": "Propia"})
+        explicit_project = self.env["project.project"].create({
+            "name": "Con etapas explícitas",
+            "type_ids": [Command.set(explicit_stage.ids)],
+        })
+        self.assertEqual(explicit_project.type_ids, explicit_stage)
+
+    def test_project_user_creation_gets_default_stages(self):
+        project_user = new_test_user(
+            self.env,
+            login="default_stages_project_user",
+            groups="project.group_project_user",
+        )
+        project = self.env["project.project"].with_user(project_user).create({
+            "name": "Proyecto de usuario",
+        })
+        self.assertEqual(len(project.sudo().type_ids), 5)
+
     def test_existing_subtasks_are_hidden_from_project_flow(self):
         root_task = self.env["project.task"].create({
             "name": "Tarea principal",
@@ -675,8 +720,7 @@ class TestProjectDashboard(TransactionCase):
             parent = self.env["project.task"].create({
                 "name": f"Tarea padre {index}",
                 "project_id": project.id,
-                "planned_date_begin": datetime(2026, 1, 1, 12),
-                "date_deadline": datetime(2026, 1, 7, 12),
+                "project_weight": 5,
             })
             self.env["project.task"].create({
                 "name": f"Subtarea {index}",
@@ -798,52 +842,45 @@ class TestProjectDashboard(TransactionCase):
             self.env["project.task"].search(critical["domain"]).project_id,
         )
 
-    def test_project_progress_weights_phase_duration_and_nested_leaf_tasks(self):
+    def _create_weighted_task(self, project, name, weight=0, parent=False, state=False):
+        values = {
+            "name": name,
+            "project_id": project.id,
+            "project_weight": weight,
+        }
+        if parent:
+            values["parent_id"] = parent.id
+        if state:
+            values["state"] = state
+        return self.env["project.task"].create(values)
+
+    def test_project_progress_splits_main_task_weight_among_subtasks(self):
         project = self._create_project(
-            "Proyecto con fases planificadas",
+            "Proyecto con pesos",
             self.partner_a,
             "on_track",
         )
-        short_phase = self.env["project.task"].create({
-            "name": "Fase corta",
-            "project_id": project.id,
-            "planned_date_begin": datetime(2026, 1, 1, 12),
-            "date_deadline": datetime(2026, 1, 7, 12),
-        })
-        self.env["project.task"].create({
-            "name": "Historia hecha",
-            "project_id": project.id,
-            "parent_id": short_phase.id,
-            "state": "1_done",
-        })
-        self.env["project.task"].create({
-            "name": "Historia cancelada",
-            "project_id": project.id,
-            "parent_id": short_phase.id,
-            "state": "1_canceled",
-        })
-        long_phase = self.env["project.task"].create({
-            "name": "Fase larga",
-            "project_id": project.id,
-            "planned_date_begin": datetime(2026, 1, 1, 12),
-            "date_deadline": datetime(2026, 1, 14, 12),
-        })
-        container = self.env["project.task"].create({
-            "name": "Contenedor de historias",
-            "project_id": project.id,
-            "parent_id": long_phase.id,
-        })
-        self.env["project.task"].create({
-            "name": "Historia anidada hecha",
-            "project_id": project.id,
-            "parent_id": container.id,
-            "state": "1_done",
-        })
-        self.env["project.task"].create({
-            "name": "Historia anidada pendiente",
-            "project_id": project.id,
-            "parent_id": container.id,
-        })
+        first = self._create_weighted_task(project, "Épica 20%", 20)
+        for index in range(5):
+            self._create_weighted_task(
+                project,
+                f"Subtarea {index}",
+                parent=first,
+                state="1_done" if index < 2 else False,
+            )
+        second = self._create_weighted_task(project, "Épica 10%", 10)
+        self._create_weighted_task(project, "Hecha", parent=second, state="1_done")
+        self._create_weighted_task(project, "Pendiente", parent=second)
+
+        progress = self.env["project.project"]._get_project_execution_progress(
+            project
+        )
+        # 2 subtareas de 4% + 1 subtarea de 5%.
+        self.assertEqual(progress["percentage"], 13.0)
+        self.assertEqual(project.weighted_progress, 13.0)
+        self.assertEqual(project.progress_weight_total, 30.0)
+        self.assertEqual(first.project_progress_percentage, 40.0)
+        self.assertEqual(second.project_progress_percentage, 50.0)
 
         detail = self.env["project.project"].get_project_detail_dashboard_data(
             project.id,
@@ -853,50 +890,88 @@ class TestProjectDashboard(TransactionCase):
             self.partner_a.id,
         )
         project_row = next(row for row in dashboard["projects"] if row["id"] == project.id)
-
-        self.assertEqual(detail["progress"]["percentage"], 50.0)
-        self.assertEqual(project_row["progress"], detail["progress"]["percentage"])
+        self.assertEqual(detail["progress"]["mode"], "parents")
+        self.assertEqual(detail["progress"]["percentage"], 13.0)
+        self.assertEqual(project_row["progress"], 13.0)
         phases = {item["id"]: item for item in detail["progress"]["parent_tasks"]}
-        self.assertEqual(phases[short_phase.id]["duration_days"], 7)
-        self.assertEqual(phases[long_phase.id]["duration_days"], 14)
-        self.assertEqual(phases[short_phase.id]["percentage"], 50.0)
-        self.assertEqual(phases[long_phase.id]["percentage"], 50.0)
+        self.assertEqual(phases[first.id]["weight_percentage"], 20.0)
+        self.assertEqual(phases[first.id]["percentage"], 40.0)
+        self.assertEqual(phases[first.id]["completed_subtasks"], 2)
+        self.assertEqual(phases[first.id]["total_subtasks"], 5)
+        self.assertEqual(phases[second.id]["weight_percentage"], 10.0)
 
-    def test_project_progress_is_unavailable_when_a_phase_date_is_missing(self):
+    def test_project_progress_ignores_canceled_and_splits_nested_subtasks(self):
         project = self._create_project(
-            "Proyecto sin planificación completa",
+            "Proyecto con anidamiento",
             self.partner_a,
             "on_track",
         )
-        self.env["project.task"].create({
-            "name": "Fase sin fecha final",
+        phase = self._create_weighted_task(project, "Fase", 60)
+        self._create_weighted_task(project, "Cancelada", parent=phase, state="1_canceled")
+        self._create_weighted_task(project, "Hecha", parent=phase, state="1_done")
+        container = self._create_weighted_task(project, "Contenedor", parent=phase)
+        self._create_weighted_task(project, "Anidada hecha", parent=container, state="1_done")
+        self._create_weighted_task(project, "Anidada pendiente", parent=container)
+        self._create_weighted_task(project, "Sin subtareas hecha", 30, state="1_done")
+        self._create_weighted_task(project, "Principal cancelada", 10, state="1_canceled")
+
+        progress = self.env["project.project"]._get_project_execution_progress(
+            project
+        )
+        # Fase: 30% (hecha) + 15% (mitad del contenedor); principal hecha: 30%.
+        self.assertEqual(progress["percentage"], 75.0)
+        phases = {item["task"].name: item for item in progress["phases"]}
+        self.assertEqual(phases["Fase"]["completed_count"], 2)
+        self.assertEqual(phases["Fase"]["total_count"], 3)
+        self.assertEqual(phases["Principal cancelada"]["percentage"], 0.0)
+
+    def test_project_progress_ignores_dates_and_needs_weights(self):
+        project = self._create_project(
+            "Proyecto sin pesos",
+            self.partner_a,
+            "on_track",
+        )
+        task = self.env["project.task"].create({
+            "name": "Fase sin fechas",
             "project_id": project.id,
-            "planned_date_begin": datetime(2026, 1, 1, 12),
+            "state": "1_done",
         })
         progress = self.env["project.project"]._get_project_execution_progress(
             project
         )
-        self.assertFalse(progress["percentage"])
+        self.assertIs(progress["percentage"], False)
 
-    def test_dashboard_progress_uses_planned_phase_completion(self):
+        task.project_weight = 40
+        progress = self.env["project.project"]._get_project_execution_progress(
+            project
+        )
+        self.assertEqual(progress["percentage"], 40.0)
+
+    def test_project_weight_sum_cannot_exceed_one_hundred(self):
+        project = self._create_project(
+            "Proyecto con exceso de peso",
+            self.partner_a,
+            "on_track",
+        )
+        first = self._create_weighted_task(project, "Primera", 70)
+        with self.assertRaises(ValidationError):
+            self._create_weighted_task(project, "Segunda", 40)
+        second = self._create_weighted_task(project, "Segunda", 30)
+        with self.assertRaises(ValidationError):
+            second.project_weight = 30.01
+        with self.assertRaises(ValidationError):
+            first.project_weight = -1
+        # Subtask weights are ignored by the limit and by the progress.
+        self._create_weighted_task(project, "Subtarea", 50, parent=first)
+
+    def test_dashboard_progress_uses_weighted_main_tasks(self):
         project = self._create_project(
             "Proyecto de avance general",
             self.partner_a,
             "on_track",
         )
-        self.env["project.task"].create({
-            "name": "Fase completada",
-            "project_id": project.id,
-            "planned_date_begin": datetime(2026, 1, 1, 12),
-            "date_deadline": datetime(2026, 1, 7, 12),
-            "state": "1_done",
-        })
-        self.env["project.task"].create({
-            "name": "Fase pendiente",
-            "project_id": project.id,
-            "planned_date_begin": datetime(2026, 1, 1, 12),
-            "date_deadline": datetime(2026, 1, 14, 12),
-        })
+        self._create_weighted_task(project, "Fase completada", 30, state="1_done")
+        self._create_weighted_task(project, "Fase pendiente", 70)
         data = self.env["project.project"].get_project_dashboard_data(
             self.partner_a.id
         )
@@ -905,8 +980,8 @@ class TestProjectDashboard(TransactionCase):
             if row["id"] == project.id
         )
 
-        self.assertEqual(project_row["progress"], 33.3)
-        self.assertEqual(data["health"]["components"]["progress"], 33.3)
+        self.assertEqual(project_row["progress"], 30.0)
+        self.assertEqual(data["health"]["components"]["progress"], 30.0)
         self.assertEqual(data["projects"][0]["id"], self.at_risk_project.id)
 
     def test_dashboard_health_formula_and_problem_deduplication(self):
