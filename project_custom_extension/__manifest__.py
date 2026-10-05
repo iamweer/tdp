@@ -1,7 +1,7 @@
 {
     "name": "Extensión personalizada de proyectos",
-    "summary": "Fechas planeadas, garantías y migración del flujo de subtareas",
-    "version": "18.0.1.6.0",
+    "summary": "Fechas planeadas, garantías, registro de horas y migración del flujo de subtareas",
+    "version": "18.0.1.7.0",
     "category": "Services/Project",
     "author": "TDP",
     "license": "LGPL-3",
@@ -19,6 +19,7 @@
         "views/project_project_views.xml",
         "views/project_sprint_views.xml",
         "views/project_task_views.xml",
+        "views/project_task_time_entry_views.xml",
     ],
     "assets": {
         "web.assets_backend": [
@@ -34,12 +35,16 @@
             "project_custom_extension/static/src/resource_report/project_resource_report.js",
             "project_custom_extension/static/src/resource_report/project_resource_report.xml",
             "project_custom_extension/static/src/resource_report/project_resource_report.scss",
+            "project_custom_extension/static/src/timesheet_grid/project_timesheet_grid.js",
+            "project_custom_extension/static/src/timesheet_grid/project_timesheet_grid.xml",
+            "project_custom_extension/static/src/timesheet_grid/project_timesheet_grid.scss",
         ],
         "web.assets_unit_tests": [
             "project_custom_extension/static/tests/project_dashboard.test.js",
             "project_custom_extension/static/tests/project_detail_dashboard.test.js",
             "project_custom_extension/static/tests/project_gantt.test.js",
             "project_custom_extension/static/tests/project_resource_report.test.js",
+            "project_custom_extension/static/tests/project_timesheet_grid.test.js",
         ],
     },
     "post_init_hook": "post_init_hook",

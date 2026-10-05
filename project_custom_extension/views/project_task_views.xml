@@ -21,6 +21,24 @@
                 <field name="sprint_id" options="{'no_create': True}"/>
                 <field name="hierarchical_priority" string="Prioridad jerárquica"/>
             </xpath>
+            <xpath expr="//notebook/page[@name='description_page']" position="after">
+                <page name="time_entries_page" string="Registro de horas" groups="project.group_project_user">
+                    <field name="time_entry_ids">
+                        <list editable="bottom">
+                            <field name="can_choose_employee" column_invisible="True"/>
+                            <field name="date"/>
+                            <field name="employee_id"
+                                   readonly="not can_choose_employee"
+                                   options="{'no_create': True, 'no_open': True}"/>
+                            <field name="name" placeholder="Breve descripción"/>
+                            <field name="unit_amount" widget="float_time" sum="Total"/>
+                        </list>
+                    </field>
+                    <group class="oe_subtotal_footer" name="time_entries_total">
+                        <field name="time_spent_hours" widget="float_time"/>
+                    </group>
+                </page>
+            </xpath>
         </field>
     </record>
 

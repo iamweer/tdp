@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="project_task_time_entry_view_list" model="ir.ui.view">
+        <field name="name">project.task.time.entry.list</field>
+        <field name="model">project.task.time.entry</field>
+        <field name="arch" type="xml">
+            <list string="Registros de horas" editable="top" multi_edit="1">
+                <field name="can_choose_employee" column_invisible="True"/>
+                <field name="date"/>
+                <field name="employee_id"
+                       readonly="not can_choose_employee"
+                       options="{'no_create': True, 'no_open': True}"/>
+                <field name="project_id" optional="show"/>
+                <field name="task_id" options="{'no_create': True}"/>
+                <field name="name"/>
+                <field name="company_type" optional="hide"/>
+                <field name="partner_id" optional="hide"/>
+                <field name="unit_amount" widget="float_time" sum="Total"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="project_task_time_entry_view_form" model="ir.ui.view">
+        <field name="name">project.task.time.entry.form</field>
+        <field name="model">project.task.time.entry</field>
+        <field name="arch" type="xml">
+            <form string="Registro de horas">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="can_choose_employee" invisible="1"/>
+                            <field name="task_id" options="{'no_create': True}"/>
+                            <field name="project_id"/>
+                            <field name="employee_id"
+                                   readonly="not can_choose_employee"
+                                   options="{'no_create': True, 'no_open': True}"/>
+                        </group>
+                        <group>
+                            <field name="date"/>
+                            <field name="unit_amount" widget="float_time"/>
+                            <field name="company_type"/>
+                        </group>
+                    </group>
+                    <field name="name" placeholder="Breve descripción del trabajo realizado"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="project_task_time_entry_view_pivot" model="ir.ui.view">
+        <field name="name">project.task.time.entry.pivot</field>
+        <field name="model">project.task.time.entry</field>
+        <field name="arch" type="xml">
+            <pivot string="Análisis de horas" sample="1">
+                <field name="employee_id" type="row"/>
+                <field name="date" interval="month" type="col"/>
+                <field name="unit_amount" type="measure" widget="float_time"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="project_task_time_entry_view_graph" model="ir.ui.view">
+        <field name="name">project.task.time.entry.graph</field>
+        <field name="model">project.task.time.entry</field>
+        <field name="arch" type="xml">
+            <graph string="Análisis de horas" type="bar" sample="1">
+                <field name="project_id"/>
+                <field name="unit_amount" type="measure" widget="float_time"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="project_task_time_entry_view_search" model="ir.ui.view">
+        <field name="name">project.task.time.entry.search</field>
+        <field name="model">project.task.time.entry</field>
+        <field name="arch" type="xml">
+            <search string="Registros de horas">
+                <field name="name"/>
+                <field name="employee_id"/>
+                <field name="project_id"/>
+                <field name="task_id"/>
+                <field name="partner_id"/>
+                <filter name="my_entries" string="Mis horas" domain="[('user_id', '=', uid)]"/>
+                <separator/>
+                <filter name="date" string="Fecha" date="date"/>
+                <separator/>
+                <filter name="company_tdp" string="TDP" domain="[('company_type', '=', 'tdp')]"/>
+                <filter name="company_abi" string="ABI" domain="[('company_type', '=', 'abi')]"/>
+                <group>
+                    <filter name="group_employee" string="Empleado" context="{'group_by': 'employee_id'}"/>
+                    <filter name="group_project" string="Proyecto" context="{'group_by': 'project_id'}"/>
+                    <filter name="group_task" string="Tarea" context="{'group_by': 'task_id'}"/>
+                    <filter name="group_company_type" string="Empresa" context="{'group_by': 'company_type'}"/>
+                    <filter name="group_date" string="Fecha" context="{'group_by': 'date'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_project_task_time_entry" model="ir.actions.act_window">
+        <field name="name">Registros de horas</field>
+        <field name="res_model">project.task.time.entry</field>
+        <field name="view_mode">list,pivot,graph,form</field>
+        <field name="search_view_id" ref="project_task_time_entry_view_search"/>
+        <field name="context">{'search_default_date': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Aún no hay horas registradas</p>
+            <p>Registre las horas desde la pestaña "Registro de horas" de cada tarea.</p>
+        </field>
+    </record>
+
+    <record id="action_project_timesheet_grid" model="ir.actions.client">
+        <field name="name">Resumen de horas</field>
+        <field name="tag">project_custom_extension.ProjectTimesheetGrid</field>
+    </record>
+
+    <menuitem id="menu_project_time_entries_root"
+              name="Horas"
+              parent="project.menu_main_pm"
+              sequence="3"
+              groups="project.group_project_user"/>
+    <menuitem id="menu_project_timesheet_grid"
+              name="Resumen de horas"
+              parent="menu_project_time_entries_root"
+              action="action_project_timesheet_grid"
+              sequence="1"/>
+    <menuitem id="menu_project_time_entries"
+              name="Registros de horas"
+              parent="menu_project_time_entries_root"
+              action="action_project_task_time_entry"
+              sequence="2"/>
+</odoo>

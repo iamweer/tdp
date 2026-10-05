@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="project_custom_extension.ProjectTimesheetGrid">
+        <div class="o_ts_grid">
+            <header class="o_ts_grid_toolbar">
+                <div class="o_ts_grid_nav">
+                    <button type="button" class="btn btn-secondary o_ts_grid_today_btn" t-on-click="goToday">Hoy</button>
+                    <div class="btn-group" role="group" aria-label="Navegar periodo">
+                        <button type="button" class="btn btn-secondary o_ts_grid_prev"
+                                title="Periodo anterior" aria-label="Periodo anterior"
+                                t-on-click="() => this.move(-1)">
+                            <i class="fa fa-arrow-left" aria-hidden="true"/>
+                        </button>
+                        <button type="button" class="btn btn-secondary o_ts_grid_next"
+                                title="Periodo siguiente" aria-label="Periodo siguiente"
+                                t-on-click="() => this.move(1)">
+                            <i class="fa fa-arrow-right" aria-hidden="true"/>
+                        </button>
+                    </div>
+                    <select class="form-select o_ts_grid_range" aria-label="Rango"
+                            t-on-change="(ev) => this.onPreferenceChange('range', ev)">
+                        <option t-foreach="rangeOptions" t-as="option" t-key="option[0]"
+                                t-att-value="option[0]"
+                                t-att-selected="state.prefs.range === option[0]"
+                                t-out="option[1]"/>
+                    </select>
+                    <strong class="o_ts_grid_period" t-out="periodLabel"/>
+                </div>
+
+                <div class="o_ts_grid_groupby btn-group" role="group" aria-label="Agrupar por">
+                    <t t-foreach="groupByOptions" t-as="option" t-key="option[0]">
+                        <button type="button"
+                                t-attf-class="btn #{state.prefs.groupBy === option[0] ? 'btn-primary' : 'btn-secondary'}"
+                                t-att-aria-pressed="state.prefs.groupBy === option[0]"
+                                t-att-data-group-by="option[0]"
+                                t-on-click="() => this.setPreference('groupBy', option[0])">
+                            Por <t t-out="option[1].toLowerCase()"/>
+                        </button>
+                    </t>
+                </div>
+
+                <div class="o_ts_grid_filters">
+                    <input type="search" class="form-control o_ts_grid_search"
+                           placeholder="Buscar…" aria-label="Buscar"
+                           t-att-value="state.search" t-on-input="onSearch"/>
+                    <t t-if="state.data">
+                        <select class="form-select o_ts_grid_filter_project" aria-label="Proyecto"
+                                t-on-change="(ev) => this.onPreferenceChange('projectId', ev)">
+                            <option value="" t-att-selected="!state.prefs.projectId">Todos los proyectos</option>
+                            <option t-foreach="state.data.filters.projects" t-as="option" t-key="option[0]"
+                                    t-att-value="option[0]"
+                                    t-att-selected="isSelected('projectId', option[0])"
+                                    t-out="option[1]"/>
+                        </select>
+                        <select t-if="state.data.is_manager"
+                                class="form-select o_ts_grid_filter_employee" aria-label="Empleado"
+                                t-on-change="(ev) => this.onPreferenceChange('employeeId', ev)">
+                            <option value="" t-att-selected="!state.prefs.employeeId">Todos los empleados</option>
+                            <option t-foreach="state.data.filters.employees" t-as="option" t-key="option[0]"
+                                    t-att-value="option[0]"
+                                    t-att-selected="isSelected('employeeId', option[0])"
+                                    t-out="option[1]"/>
+                        </select>
+                        <select class="form-select o_ts_grid_filter_company" aria-label="Empresa"
+                                t-on-change="(ev) => this.onPreferenceChange('companyType', ev)">
+                            <option value="" t-att-selected="!state.prefs.companyType">TDP y ABI</option>
+                            <option t-foreach="state.data.filters.company_types" t-as="option" t-key="option[0]"
+                                    t-att-value="option[0]"
+                                    t-att-selected="state.prefs.companyType === option[0]"
+                                    t-out="option[1]"/>
+                        </select>
+                    </t>
+                    <button t-if="hasActiveFilters" type="button"
+                            class="btn btn-link o_ts_grid_clear" t-on-click="clearFilters">
+                        Limpiar filtros
+                    </button>
+                </div>
+            </header>
+
+            <div t-if="state.error" class="o_ts_grid_feedback" role="alert">
+                <i class="fa fa-exclamation-circle" aria-hidden="true"/>
+                <span>No se pudo cargar el resumen de horas.</span>
+                <button type="button" class="btn btn-primary btn-sm" t-on-click="loadData">Reintentar</button>
+            </div>
+            <div t-elif="state.loading and !state.data" class="o_ts_grid_feedback" aria-live="polite">
+                <i class="fa fa-spinner fa-spin" aria-hidden="true"/>
+                <span>Cargando horas…</span>
+            </div>
+
+            <div t-elif="state.data"
+                 t-attf-class="o_ts_grid_scroll #{state.loading ? 'o_ts_grid_scroll--loading' : ''}">
+                <table class="o_ts_grid_table">
+                    <thead>
+                        <tr>
+                            <th class="o_ts_grid_name_col" scope="col">
+                                <t t-out="groupByOptions.find((option) => option[0] === state.data.group_by)[1]"/>
+                            </th>
+                            <th t-foreach="days" t-as="day" t-key="day.date" scope="col"
+                                t-attf-class="o_ts_grid_day #{day.is_weekend ? 'o_ts_grid_weekend' : ''} #{day.is_today ? 'o_ts_grid_today' : ''}">
+                                <t t-set="parts" t-value="dayParts(day)"/>
+                                <span class="o_ts_grid_weekday" t-out="parts.weekday"/>
+                                <span class="o_ts_grid_daylabel" t-out="parts.label"/>
+                            </th>
+                            <th class="o_ts_grid_total_col" scope="col">Tiempo utilizado</th>
+                        </tr>
+                    </thead>
+
+                    <tbody t-if="!groups.length">
+                        <tr>
+                            <td t-att-colspan="days.length + 2" class="o_ts_grid_empty">
+                                No hay horas registradas en este periodo.
+                            </td>
+                        </tr>
+                    </tbody>
+
+                    <tbody t-foreach="groups" t-as="group" t-key="group.key" class="o_ts_grid_group">
+                        <tr class="o_ts_grid_group_row">
+                            <th scope="row" class="o_ts_grid_name_col">
+                                <button type="button" class="o_ts_grid_group_toggle"
+                                        t-att-aria-expanded="!isCollapsed(group)"
+                                        t-on-click="() => this.toggleGroup(group)">
+                                    <i t-attf-class="fa #{isCollapsed(group) ? 'fa-caret-right' : 'fa-caret-down'}" aria-hidden="true"/>
+                                    <span class="o_ts_grid_avatar"
+                                          t-attf-style="background-color: #{avatarColor(group.key)}"
+                                          t-out="initial(group.name)"/>
+                                    <span class="o_ts_grid_group_name" t-out="group.name"/>
+                                </button>
+                                <span t-if="group.company_type" class="o_ts_grid_badge" t-out="companyLabel(group.company_type)"/>
+                                <span t-if="group.balance !== false"
+                                      t-attf-class="o_ts_grid_balance #{group.balance &lt; 0 ? 'o_ts_grid_balance--negative' : ''}"
+                                      t-att-title="'Esperado en el periodo: ' + formatHours(group.expected)">
+                                    <t t-out="(group.balance &gt; 0 ? '+' : '') + formatHours(group.balance)"/>
+                                </span>
+                            </th>
+                            <td t-foreach="days" t-as="day" t-key="day.date"
+                                t-attf-class="o_ts_grid_cell #{groupCellClass(group, day)}"
+                                t-on-click="() => this.openEntries({ group, day })">
+                                <t t-out="formatHours(group.daily[day.date])"/>
+                            </td>
+                            <td t-attf-class="o_ts_grid_cell o_ts_grid_total_col #{group.missing_days.length ? 'o_ts_grid_total--warning' : ''}"
+                                t-on-click="() => this.openEntries({ group })">
+                                <t t-out="formatHours(group.total)"/>
+                            </td>
+                        </tr>
+                        <t t-if="!isCollapsed(group)">
+                            <tr t-foreach="group.lines" t-as="line" t-key="line.key" class="o_ts_grid_line_row">
+                                <th scope="row" class="o_ts_grid_name_col o_ts_grid_line_name" t-out="line.name"/>
+                                <td t-foreach="days" t-as="day" t-key="day.date"
+                                    t-attf-class="o_ts_grid_cell #{lineCellClass(line, day)}"
+                                    t-on-click="() => this.openEntries({ group, line, day })">
+                                    <t t-out="formatHours(line.daily[day.date])"/>
+                                </td>
+                                <td class="o_ts_grid_cell o_ts_grid_total_col"
+                                    t-on-click="() => this.openEntries({ group, line })">
+                                    <t t-out="formatHours(line.total)"/>
+                                </td>
+                            </tr>
+                            <tr t-if="!group.lines.length" class="o_ts_grid_line_row">
+                                <th scope="row" class="o_ts_grid_name_col o_ts_grid_line_name o_ts_grid_muted">
+                                    Sin horas registradas
+                                </th>
+                                <td t-att-colspan="days.length + 1"/>
+                            </tr>
+                        </t>
+                    </tbody>
+
+                    <tfoot>
+                        <tr class="o_ts_grid_totals_row">
+                            <th scope="row" class="o_ts_grid_name_col">Total</th>
+                            <td t-foreach="days" t-as="day" t-key="day.date"
+                                t-attf-class="o_ts_grid_cell #{day.is_weekend ? 'o_ts_grid_weekend' : ''} #{day.is_today ? 'o_ts_grid_today' : ''}"
+                                t-on-click="() => this.openEntries({ day })">
+                                <t t-if="state.data.totals.daily[day.date]" t-out="formatHours(state.data.totals.daily[day.date])"/>
+                            </td>
+                            <td class="o_ts_grid_cell o_ts_grid_total_col o_ts_grid_grand_total"
+                                t-on-click="() => this.openEntries()">
+                                <t t-out="formatHours(state.data.totals.total)"/>
+                            </td>
+                        </tr>
+                        <tr class="o_ts_grid_bars_row" aria-hidden="true">
+                            <th class="o_ts_grid_name_col"/>
+                            <td t-foreach="days" t-as="day" t-key="day.date"
+                                t-attf-class="o_ts_grid_bar_cell #{day.is_weekend ? 'o_ts_grid_weekend' : ''}">
+                                <span class="o_ts_grid_bar" t-attf-style="height: #{barHeight(day)}%"/>
+                            </td>
+                            <td class="o_ts_grid_total_col"/>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </t>
+</templates>

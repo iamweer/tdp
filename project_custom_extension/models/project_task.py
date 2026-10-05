@@ -44,6 +44,7 @@ class ProjectTask(models.Model):
         ".//page[@name='sub_tasks_page']",
         ".//page[@name='task_dependencies']",
         ".//div[@name='button_box']",
+        ".//page[@name='time_entries_page']",
     )
 
     @api.model
@@ -236,11 +237,27 @@ class ProjectTask(models.Model):
         help="Porcentaje del avance del proyecto que representa esta tarea "
         "principal. Se reparte en partes iguales entre sus subtareas.",
     )
+    time_entry_ids = fields.One2many(
+        "project.task.time.entry",
+        "task_id",
+        string="Registro de horas",
+        groups="project.group_project_user",
+    )
+    time_spent_hours = fields.Float(
+        string="Horas registradas",
+        compute="_compute_time_spent_hours",
+        groups="project.group_project_user",
+    )
     project_progress_percentage = fields.Float(
         string="Avance de la tarea (%)",
         digits=(5, 1),
         compute="_compute_project_progress_percentage",
     )
+
+    @api.depends("time_entry_ids.unit_amount")
+    def _compute_time_spent_hours(self):
+        for task in self:
+            task.time_spent_hours = sum(task.time_entry_ids.mapped("unit_amount"))
 
     @api.depends("state", "child_ids.state", "project_id")
     def _compute_project_progress_percentage(self):

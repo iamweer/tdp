@@ -5,3 +5,5 @@ access_project_task_client,project.task.client,project.model_project_task,projec
 access_project_sprint_user,project.sprint.user,project_custom_extension.model_project_sprint,project.group_project_user,1,1,1,1
 access_project_sprint_manager,project.sprint.manager,project_custom_extension.model_project_sprint,project.group_project_manager,1,1,1,1
 access_project_sprint_client,project.sprint.client,project_custom_extension.model_project_sprint,project_custom_extension.group_project_client,1,0,0,0
+access_project_task_time_entry_user,project.task.time.entry.user,project_custom_extension.model_project_task_time_entry,project.group_project_user,1,1,1,1
+access_project_task_time_entry_manager,project.task.time.entry.manager,project_custom_extension.model_project_task_time_entry,project.group_project_manager,1,1,1,1
