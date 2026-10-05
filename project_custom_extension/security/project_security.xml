@@ -15,7 +15,7 @@
     <record id="task_role_gate_rule" model="ir.rule">
         <field name="name">Tareas: acceso interno por rol</field>
         <field name="model_id" ref="project.model_project_task"/>
-        <field name="domain_force">[(1, '=', 1)] if user.has_group('project.group_project_manager') or user.has_group('base.group_portal') else [('project_id', '!=', False)] if user.has_group('project_custom_extension.group_project_client') else [(1, '=', 1)] if user.has_group('project.group_project_user') else [('id', '=', 0)]</field>
+        <field name="domain_force">[(1, '=', 1)] if user.has_group('project.group_project_manager') else [('is_internal_task', '=', False)] if user.has_group('base.group_portal') else [('project_id', '!=', False), ('is_internal_task', '=', False)] if user.has_group('project_custom_extension.group_project_client') else [(1, '=', 1)] if user.has_group('project.group_project_user') else [('id', '=', 0)]</field>
     </record>
 
     <record id="project_user_visibility_rule" model="ir.rule">
@@ -40,7 +40,7 @@
     <record id="project_client_visibility_rule" model="ir.rule">
         <field name="name">Proyectos: Cliente ve proyectos asignados o relacionados</field>
         <field name="model_id" ref="project.model_project_project"/>
-        <field name="domain_force">[('active', '=', True), '|', ('partner_id.commercial_partner_id', '=', user.partner_id.commercial_partner_id.id), ('tasks', 'any', [('active', '=', True), ('user_ids', 'in', user.id)])]</field>
+        <field name="domain_force">[('active', '=', True), '|', ('partner_id.commercial_partner_id', '=', user.partner_id.commercial_partner_id.id), ('tasks', 'any', [('active', '=', True), ('is_internal_task', '=', False), ('user_ids', 'in', user.id)])]</field>
         <field name="perm_write" eval="False"/>
         <field name="perm_create" eval="False"/>
         <field name="perm_unlink" eval="False"/>
@@ -66,7 +66,7 @@
     <record id="task_client_visibility_rule" model="ir.rule">
         <field name="name">Tareas: Cliente ve tareas de proyectos accesibles</field>
         <field name="model_id" ref="project.model_project_task"/>
-        <field name="domain_force">[('active', '=', True), ('project_id.active', '=', True), '|', ('project_id.partner_id.commercial_partner_id', '=', user.partner_id.commercial_partner_id.id), ('project_id.tasks', 'any', [('active', '=', True), ('user_ids', 'in', user.id)])]</field>
+        <field name="domain_force">[('active', '=', True), ('project_id.active', '=', True), '|', ('project_id.partner_id.commercial_partner_id', '=', user.partner_id.commercial_partner_id.id), ('project_id.tasks', 'any', [('active', '=', True), ('is_internal_task', '=', False), ('user_ids', 'in', user.id)])]</field>
         <field name="perm_write" eval="False"/>
         <field name="perm_create" eval="False"/>
         <field name="perm_unlink" eval="False"/>
@@ -98,7 +98,7 @@
     <record id="project_sprint_client_visibility_rule" model="ir.rule">
         <field name="name">Sprints: Cliente consulta proyectos relacionados</field>
         <field name="model_id" ref="project_custom_extension.model_project_sprint"/>
-        <field name="domain_force">[('project_id.active', '=', True), '|', ('project_id.partner_id.commercial_partner_id', '=', user.partner_id.commercial_partner_id.id), ('project_id.tasks', 'any', [('active', '=', True), ('user_ids', 'in', user.id)])]</field>
+        <field name="domain_force">[('project_id.active', '=', True), '|', ('project_id.partner_id.commercial_partner_id', '=', user.partner_id.commercial_partner_id.id), ('project_id.tasks', 'any', [('active', '=', True), ('is_internal_task', '=', False), ('user_ids', 'in', user.id)])]</field>
         <field name="perm_write" eval="False"/>
         <field name="perm_create" eval="False"/>
         <field name="perm_unlink" eval="False"/>

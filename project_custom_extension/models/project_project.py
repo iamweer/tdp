@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 from lxml import etree
 
 from odoo import Command, _, api, fields, models
+from odoo.addons.project.models.project_task import CLOSED_STATES
 from odoo.exceptions import AccessError, ValidationError
 from odoo.osv import expression
 
@@ -46,6 +47,9 @@ COMPANY_TYPE_SELECTION = [
     ("tdp", "TDP"),
     ("abi", "ABI"),
 ]
+
+# Las tareas internas no cuentan para el avance, los contadores ni los reportes.
+VISIBLE_TASK_DOMAIN = [("is_internal_task", "=", False)]
 
 # Etapas que recibe cada proyecto nuevo: (nombre, plegada).
 DEFAULT_TASK_STAGES = (
@@ -171,7 +175,7 @@ class ProjectProject(models.Model):
         "project.task",
         "project_id",
         string="Tareas principales",
-        domain=[("parent_id", "=", False)],
+        domain=[("parent_id", "=", False), *VISIBLE_TASK_DOMAIN],
     )
     progress_weight_total = fields.Float(
         string="Peso asignado (%)",
@@ -188,6 +192,7 @@ class ProjectProject(models.Model):
         "main_task_ids.project_weight",
         "main_task_ids.state",
         "main_task_ids.child_ids.state",
+        "main_task_ids.is_internal_task",
     )
     def _compute_weighted_progress(self):
         for project in self:
@@ -201,6 +206,36 @@ class ProjectProject(models.Model):
                 phase["weight"] for phase in progress["phases"]
             )
             project.weighted_progress = progress["percentage"] or 0.0
+
+    def _compute_visible_task_count(self, count_field, additional_domain=None):
+        """Same as the native task counters, excluding internal tasks."""
+        domain = [
+            ("project_id", "in", self.ids),
+            ("display_in_project", "=", True),
+            *VISIBLE_TASK_DOMAIN,
+        ]
+        if additional_domain:
+            domain = expression.AND([domain, additional_domain])
+        tasks_count_by_project = dict(self.env["project.task"].with_context(
+            active_test=any(project.active for project in self)
+        )._read_group(domain, ["project_id"], ["__count"]))
+        for project in self:
+            project[count_field] = tasks_count_by_project.get(project, 0)
+
+    def _compute_task_count(self):
+        self._compute_visible_task_count("task_count")
+
+    def _compute_open_task_count(self):
+        self._compute_visible_task_count(
+            "open_task_count",
+            [("state", "in", self.env["project.task"].OPEN_STATES)],
+        )
+
+    def _compute_closed_task_count(self):
+        self._compute_visible_task_count(
+            "closed_task_count",
+            [("state", "in", list(CLOSED_STATES))],
+        )
 
     @api.depends("warranty_start_date", "warranty_end_date")
     def _compute_warranty_period_display(self):
@@ -250,9 +285,12 @@ class ProjectProject(models.Model):
             tasks = self.env["project.task"].search([
                 ("project_id", "=", project.id),
                 ("active", "=", True),
+                *VISIBLE_TASK_DOMAIN,
             ])
         tasks = tasks.filtered(
-            lambda task: task.project_id == project and task.active
+            lambda task: task.project_id == project
+            and task.active
+            and not task.is_internal_task
         )
         children_by_parent = {}
         for task in tasks:
@@ -310,6 +348,7 @@ class ProjectProject(models.Model):
             tasks = self.env["project.task"].search([
                 ("project_id", "in", projects.ids),
                 ("active", "=", True),
+                *VISIBLE_TASK_DOMAIN,
             ])
         tasks_by_project = {}
         for task in tasks:
@@ -746,6 +785,7 @@ class ProjectProject(models.Model):
         tasks = Task.search([
             ("project_id", "=", project.id),
             ("active", "=", True),
+            *VISIBLE_TASK_DOMAIN,
         ], order="sequence, name, id")
         task_by_id = {task.id: task for task in tasks}
         parent_by_id = {}
@@ -925,11 +965,13 @@ class ProjectProject(models.Model):
         project_tasks = Task.search([
             ("project_id", "=", project.id),
             ("active", "=", True),
+            *VISIBLE_TASK_DOMAIN,
         ])
         progress_task_domain = [
             ("project_id", "=", project.id),
             ("active", "=", True),
             ("display_in_project", "=", True),
+            *VISIBLE_TASK_DOMAIN,
         ]
         closed_states = ["1_done", "1_canceled"]
         progress_metrics = []
@@ -965,7 +1007,12 @@ class ProjectProject(models.Model):
             })
 
         main_tasks = Task.search(
-            [("project_id", "=", project.id), ("active", "=", True), ("parent_id", "=", False)],
+            [
+                ("project_id", "=", project.id),
+                ("active", "=", True),
+                ("parent_id", "=", False),
+                *VISIBLE_TASK_DOMAIN,
+            ],
             order="sequence, name, id",
         )
         execution_progress = self._get_project_execution_progress(
@@ -985,6 +1032,7 @@ class ProjectProject(models.Model):
                 ("project_id", "=", project.id),
                 ("active", "=", True),
                 ("id", "child_of", item["task"].id),
+                *VISIBLE_TASK_DOMAIN,
             ],
         } for item in phase_progress]
         progress_mode = (
@@ -1021,6 +1069,7 @@ class ProjectProject(models.Model):
                         ("active", "=", True),
                         ("state", "=", state),
                         *scope_domain,
+                        *VISIBLE_TASK_DOMAIN,
                     ],
                 }
                 for state, label in task_state_labels.items()
@@ -1078,6 +1127,7 @@ class ProjectProject(models.Model):
             ("active", "=", True),
             ("state", "in", Task.OPEN_STATES),
             ("date_deadline", "<", current_datetime),
+            *VISIBLE_TASK_DOMAIN,
         ]
         critical_tasks = Task.search(
             critical_domain,
@@ -1152,6 +1202,7 @@ class ProjectProject(models.Model):
         domain = [
             ("project_id", "=", project.id),
             ("active", "=", True),
+            *VISIBLE_TASK_DOMAIN,
         ]
         if sprint_filter == "none":
             domain.append(("sprint_id", "=", False))
@@ -1283,6 +1334,7 @@ class ProjectProject(models.Model):
             ("project_id.active", "=", True),
             ("project_id.last_update_status", "!=", "done"),
             ("state", "in", Task.OPEN_STATES),
+            *VISIBLE_TASK_DOMAIN,
         ]
         if partner_id:
             task_domain.append(("project_id.partner_id", "=", partner_id))

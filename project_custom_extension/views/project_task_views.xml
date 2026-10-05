@@ -20,6 +20,9 @@
             <xpath expr="//div[@id='date_deadline_and_recurring_task']" position="after">
                 <field name="sprint_id" options="{'no_create': True}"/>
                 <field name="hierarchical_priority" string="Prioridad jerárquica"/>
+                <field name="is_internal_task"
+                       widget="boolean_toggle"
+                       groups="project.group_project_manager"/>
             </xpath>
             <xpath expr="//notebook/page[@name='description_page']" position="after">
                 <page name="time_entries_page" string="Registro de horas" groups="project.group_project_user">
@@ -51,6 +54,9 @@
                 <field name="planned_date_begin" optional="hide"/>
                 <field name="hierarchical_priority" string="Prioridad jerárquica" optional="show"/>
                 <field name="sprint_id" optional="show"/>
+                <field name="is_internal_task"
+                       optional="hide"
+                       groups="project.group_project_manager"/>
             </field>
             <xpath expr="//list" position="attributes">
                 <attribute name="default_order">sprint_sequence_order, hierarchical_priority_order, priority desc, sequence, state, date_deadline asc, id desc</attribute>
@@ -84,6 +90,25 @@
                     <field name="sprint_id"/>
                 </div>
             </xpath>
+        </field>
+    </record>
+
+    <record id="project_task_view_search_custom_extension" model="ir.ui.view">
+        <field name="name">project.task.search.custom.extension</field>
+        <field name="model">project.task</field>
+        <field name="inherit_id" ref="project.view_task_search_form_base"/>
+        <field name="arch" type="xml">
+            <filter name="closed_tasks" position="after">
+                <separator groups="project.group_project_manager"/>
+                <filter string="Internas"
+                        name="internal_tasks"
+                        domain="[('is_internal_task', '=', True)]"
+                        groups="project.group_project_manager"/>
+                <filter string="No internas"
+                        name="not_internal_tasks"
+                        domain="[('is_internal_task', '=', False)]"
+                        groups="project.group_project_manager"/>
+            </filter>
         </field>
     </record>
 

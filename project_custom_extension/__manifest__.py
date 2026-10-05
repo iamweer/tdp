@@ -1,7 +1,7 @@
 {
     "name": "Extensión personalizada de proyectos",
     "summary": "Fechas planeadas, garantías, registro de horas y migración del flujo de subtareas",
-    "version": "18.0.1.7.0",
+    "version": "18.0.1.8.0",
     "category": "Services/Project",
     "author": "TDP",
     "license": "LGPL-3",

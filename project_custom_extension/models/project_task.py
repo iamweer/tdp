@@ -177,6 +177,10 @@ class ProjectTask(models.Model):
     def write(self, vals):
         if self.env.su or self.env.user.has_group("project.group_project_manager"):
             return self._write_with_resolved_stage_sync(vals)
+        if "is_internal_task" in vals:
+            raise AccessError(
+                _("Solo un administrador de proyectos puede marcar tareas como internas.")
+            )
 
         is_client = self.env.user.has_group(
             "project_custom_extension.group_project_client"
@@ -253,13 +257,41 @@ class ProjectTask(models.Model):
         digits=(5, 1),
         compute="_compute_project_progress_percentage",
     )
+    # Not restricted with ``groups``: dashboards and record rules search on
+    # it for every user. The views only show it to project managers.
+    is_internal_task = fields.Boolean(
+        string="Tarea interna",
+        compute="_compute_is_internal_task",
+        store=True,
+        readonly=False,
+        recursive=True,
+        index=True,
+        tracking=True,
+        help="Tarea de manejo interno: no la ven los clientes y no cuenta "
+        "para el avance ni los reportes del proyecto. Las subtareas heredan "
+        "esta marca.",
+    )
+
+    @api.depends("parent_id.is_internal_task")
+    def _compute_is_internal_task(self):
+        for task in self:
+            if task.parent_id:
+                task.is_internal_task = task.parent_id.is_internal_task
+
+    @api.constrains("is_internal_task", "parent_id")
+    def _check_internal_task_parent(self):
+        for task in self:
+            if task.parent_id.is_internal_task and not task.is_internal_task:
+                raise ValidationError(
+                    _("Una subtarea de una tarea interna también debe ser interna.")
+                )
 
     @api.depends("time_entry_ids.unit_amount")
     def _compute_time_spent_hours(self):
         for task in self:
             task.time_spent_hours = sum(task.time_entry_ids.mapped("unit_amount"))
 
-    @api.depends("state", "child_ids.state", "project_id")
+    @api.depends("state", "child_ids.state", "project_id", "is_internal_task")
     def _compute_project_progress_percentage(self):
         self.project_progress_percentage = 0.0
         tasks = self.filtered(
@@ -277,7 +309,9 @@ class ProjectTask(models.Model):
                     fraction_by_task.get(task._origin.id, 0.0) * 100, 1
                 )
 
-    @api.constrains("project_weight", "parent_id", "project_id", "active")
+    @api.constrains(
+        "project_weight", "parent_id", "project_id", "active", "is_internal_task"
+    )
     def _check_project_weight(self):
         for task in self:
             if not 0 <= task.project_weight <= 100:
@@ -293,6 +327,7 @@ class ProjectTask(models.Model):
             main_tasks = self.sudo().search([
                 ("project_id", "=", project.id),
                 ("parent_id", "=", False),
+                ("is_internal_task", "=", False),
             ])
             total = sum(main_tasks.mapped("project_weight"))
             if float_compare(total, 100, precision_digits=2) > 0:
