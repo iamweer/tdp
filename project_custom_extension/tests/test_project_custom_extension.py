@@ -964,6 +964,26 @@ class TestProjectDashboard(TransactionCase):
         # Subtask weights are ignored by the limit and by the progress.
         self._create_weighted_task(project, "Subtarea", 50, parent=first)
 
+    def test_project_form_validates_weight_total_after_all_rows(self):
+        project = self._create_project(
+            "Proyecto con pesos redistribuidos",
+            self.partner_a,
+            "on_track",
+        )
+        first = self._create_weighted_task(project, "Primera", 60)
+        second = self._create_weighted_task(project, "Segunda", 40)
+        # The form sends the rows in order: the first one alone exceeds 100%.
+        project.write({"main_task_ids": [
+            Command.update(first.id, {"project_weight": 70}),
+            Command.update(second.id, {"project_weight": 29}),
+        ]})
+        self.assertEqual(project.progress_weight_total, 99)
+        with self.assertRaises(ValidationError):
+            project.write({"main_task_ids": [
+                Command.update(first.id, {"project_weight": 72}),
+                Command.update(second.id, {"project_weight": 29}),
+            ]})
+
     def test_dashboard_progress_uses_weighted_main_tasks(self):
         project = self._create_project(
             "Proyecto de avance general",

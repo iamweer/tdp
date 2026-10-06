@@ -430,6 +430,23 @@ class TestProjectRoleAccess(TransactionCase):
             1,
         )
 
+    def test_project_user_edits_main_tasks_from_foreign_project_form(self):
+        project = self.user_project.with_user(self.project_user)
+        project.write({"main_task_ids": [
+            Command.update(self.user_assigned_task.id, {"project_weight": 60}),
+            Command.update(self.user_context_task.id, {"project_weight": 40}),
+        ]})
+        self.assertEqual(self.user_assigned_task.project_weight, 60)
+        self.assertEqual(self.user_context_task.project_weight, 40)
+
+        # The project fields still require being its creator.
+        with self.assertRaises(AccessError):
+            project.write({"name": "Proyecto renombrado"})
+        with self.assertRaises(AccessError):
+            project.write({"main_task_ids": [
+                Command.update(self.foreign_task.id, {"project_weight": 1}),
+            ]})
+
     def test_project_todo_access_is_limited_to_project_users(self):
         todo_module = self.env["ir.module.module"].search([
             ("name", "=", "project_todo"),

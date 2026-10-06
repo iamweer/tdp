@@ -125,6 +125,57 @@ class ProjectProject(models.Model):
         return project.id, project.display_name
 
     def write(self, vals):
+        vals = dict(vals)
+        main_task_commands = vals.pop("main_task_ids", None)
+        if main_task_commands is not None and not self._can_write_main_tasks(
+            main_task_commands
+        ):
+            vals["main_task_ids"] = main_task_commands
+            main_task_commands = None
+        result = self._write_project_values(vals) if vals else True
+        if main_task_commands is not None:
+            self._write_main_tasks(main_task_commands)
+        return result
+
+    def _can_write_main_tasks(self, commands):
+        """Whether the main task commands only edit existing tasks.
+
+        Those edits are written on the tasks themselves, so they only need
+        write access to the tasks and not to the project.
+        """
+        Task = self.env["project.task"]
+        return all(
+            command[0] == Command.UPDATE
+            or (
+                command[0] == Command.LINK
+                and Task.browse(command[1]).project_id in self
+            )
+            for command in commands
+        )
+
+    def _write_main_tasks(self, commands):
+        self.check_access("read")
+        Task = self.env["project.task"].with_context(
+            skip_project_weight_total_check=True
+        )
+        tasks = Task.browse()
+        for command in commands:
+            if command[0] != Command.UPDATE:
+                continue
+            task = Task.browse(command[1])
+            if task.project_id not in self:
+                raise AccessError(
+                    _("Solo puede modificar las tareas de este proyecto.")
+                )
+            task.write(command[2])
+            tasks |= task
+        # The weights are validated once all rows are saved: rows are written
+        # one by one and an intermediate total may exceed 100%.
+        tasks.with_context(
+            skip_project_weight_total_check=False
+        )._check_project_weight()
+
+    def _write_project_values(self, vals):
         if self.env.su or self.env.user.has_group("project.group_project_manager"):
             return super().write(vals)
         if (

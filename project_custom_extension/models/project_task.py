@@ -318,6 +318,8 @@ class ProjectTask(models.Model):
                 raise ValidationError(
                     _("El peso de una tarea debe estar entre 0% y 100%.")
                 )
+        if self.env.context.get("skip_project_weight_total_check"):
+            return
         projects = self.filtered(
             lambda task: not task.parent_id and task.project_weight
         ).project_id
