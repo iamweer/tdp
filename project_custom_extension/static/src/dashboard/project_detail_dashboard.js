@@ -13,7 +13,7 @@ const WORKLOAD_COLORS = ["teal", "indigo", "amber", "navy", "lilac"];
 
 const SCHEDULE_TONES = {
     on_time: "green",
-    attention: "amber",
+    at_risk: "amber",
     late: "red",
     unplanned: "muted",
 };

@@ -33,7 +33,7 @@ function makeData(projectId = 10) {
         },
         kpis: {
             progress: { percentage: 68, completed: 17, total: 25, domain: [["id", "=", 1]] },
-            schedule: { key: "attention", label: "En atención", detail: "Esperado 78% · real 68%" },
+            schedule: { key: "at_risk", label: "En riesgo", detail: "Esperado 78% · real 68% · desviación -10 pts" },
             overdue: { count: 7, domain: [["id", "=", 2]] },
             milestones: { done: 8, total: 10, domain: [["id", "=", 3]] },
             blockers: { count: 2, domain: [["id", "=", 4]] },

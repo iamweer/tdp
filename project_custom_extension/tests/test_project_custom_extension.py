@@ -662,7 +662,9 @@ class TestProjectDashboard(TransactionCase):
         self.assertEqual(data["project"]["id"], self.on_track_project.id)
         self.assertEqual(data["project"]["customer_name"], "Cliente A")
         self.assertFalse(kpis["progress"]["percentage"])
-        self.assertEqual(kpis["schedule"]["key"], "unplanned")
+        # Without dates or weights, an overdue subtask is enough to be late.
+        self.assertEqual(kpis["schedule"]["key"], "late")
+        self.assertIn("1 tarea(s) vencida(s)", kpis["schedule"]["detail"])
 
         # Only subtasks count as overdue tasks.
         self.assertEqual(kpis["overdue"]["count"], 1)
@@ -769,8 +771,9 @@ class TestProjectDashboard(TransactionCase):
         commitments = data["commitments"]["items"]
         self.assertFalse(commitments)
 
-    def test_project_detail_dashboard_schedule_compares_expected_progress(self):
+    def test_project_detail_dashboard_schedule_traffic_light(self):
         today = fields.Date.context_today(self.env["project.project"])
+        now = fields.Datetime.now()
         project = self._create_project(
             "Proyecto planificado",
             self.partner_a,
@@ -780,7 +783,7 @@ class TestProjectDashboard(TransactionCase):
         )
         phase = self._create_weighted_task(project, "Fase única", 100)
         self._create_weighted_task(project, "Hecha", parent=phase, state="1_done")
-        self._create_weighted_task(project, "Pendiente", parent=phase)
+        pending = self._create_weighted_task(project, "Pendiente", parent=phase)
 
         def schedule(cutoff=False):
             return self.env["project.project"].get_project_detail_dashboard_data(
@@ -788,24 +791,82 @@ class TestProjectDashboard(TransactionCase):
                 cutoff=cutoff,
             )["kpis"]["schedule"]
 
-        # Expected 60%, real 50%.
-        self.assertEqual(schedule()["key"], "attention")
-        self.assertEqual(schedule()["expected"], 60.0)
+        # Expected 60%, real 50%: behind, but nothing overdue yet.
+        result = schedule()
+        self.assertEqual(result["key"], "at_risk")
+        self.assertEqual(result["expected"], 60.0)
+        self.assertEqual(result["deviation"], -10.0)
 
         project.date = today + timedelta(days=60)
         self.assertEqual(schedule()["key"], "on_time")
+        self.assertEqual(schedule()["label"], "A tiempo")
 
+        # Ending tomorrow far behind plan is a risk, not a delay.
         project.date = today + timedelta(days=1)
-        self.assertEqual(schedule()["key"], "late")
+        self.assertEqual(schedule()["key"], "at_risk")
 
+        # An overdue task makes it late.
         project.date = today + timedelta(days=60)
-        phase.date_deadline = fields.Datetime.now() - timedelta(days=1)
-        self.assertEqual(schedule()["key"], "late")
+        pending.write({
+            "planned_date_begin": now - timedelta(days=3),
+            "date_deadline": now - timedelta(days=1),
+        })
+        result = schedule()
+        self.assertEqual(result["key"], "late")
+        self.assertIn("1 tarea(s) vencida(s)", result["detail"])
+
+        # So does a phase that should already be closed.
+        pending.write({"date_deadline": now + timedelta(days=5)})
+        phase.date_deadline = now - timedelta(days=1)
+        result = schedule()
+        self.assertEqual(result["key"], "late")
+        self.assertIn("1 hito(s) vencido(s)", result["detail"])
+
+        # And the end date passed with work still open.
+        phase.date_deadline = False
+        project.date = today - timedelta(days=1)
+        result = schedule()
+        self.assertEqual(result["key"], "late")
+        self.assertEqual(result["detail"], "Fecha fin superada")
 
         # Before the project starts nothing is expected yet.
         start = today - timedelta(days=60)
         previous_month = (start.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
         self.assertEqual(schedule(previous_month)["expected"], 0.0)
+        self.assertEqual(schedule(previous_month)["key"], "on_time")
+
+    def test_project_detail_dashboard_schedule_matches_the_reference_case(self):
+        """80% real, 96% expected, nothing overdue, ending tomorrow: at risk."""
+        today = fields.Date.context_today(self.env["project.project"])
+        project = self._create_project(
+            "Proyecto del caso analizado",
+            self.partner_a,
+            "on_track",
+            date_start=today - timedelta(days=24),
+            date=today + timedelta(days=1),
+        )
+        done_phase = self._create_weighted_task(project, "Fases cerradas", 80)
+        self._create_weighted_task(project, "Cerrada", parent=done_phase, state="1_done")
+        last_phase = self._create_weighted_task(project, "Última fase", 20)
+        self._create_weighted_task(project, "Abierta", parent=last_phase)
+
+        result = self.env["project.project"].get_project_detail_dashboard_data(
+            project.id,
+        )["kpis"]["schedule"]
+
+        self.assertEqual(result["expected"], 96.0)
+        self.assertEqual(result["deviation"], -16.0)
+        self.assertEqual(result["key"], "at_risk")
+        self.assertEqual(result["label"], "En riesgo")
+
+    def test_project_detail_dashboard_schedule_without_planning(self):
+        project = self._create_project("Proyecto sin fechas", self.partner_a, "on_track")
+        self.env["project.task"].create({"name": "Tarea", "project_id": project.id})
+        result = self.env["project.project"].get_project_detail_dashboard_data(
+            project.id,
+        )["kpis"]["schedule"]
+        self.assertEqual(result["key"], "unplanned")
+        self.assertFalse(result["deviation"])
 
     def test_project_detail_dashboard_phase_filter_and_cutoff(self):
         Project = self.env["project.project"]

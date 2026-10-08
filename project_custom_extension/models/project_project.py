@@ -51,6 +51,10 @@ COMPANY_TYPE_SELECTION = [
     ("abi", "ABI"),
 ]
 
+# Puntos por debajo del avance esperado a partir de los que el cronograma
+# pasa a "En riesgo" (si aún no hay tareas ni hitos vencidos).
+SCHEDULE_RISK_DEVIATION = 5
+
 # Las tareas internas no cuentan para el avance, los contadores ni los reportes.
 VISIBLE_TASK_DOMAIN = [("is_internal_task", "=", False)]
 
@@ -1051,45 +1055,64 @@ class ProjectProject(models.Model):
         project,
         percentage,
         reference_date,
+        overdue_task_count,
         overdue_phase_count,
+        has_open_tasks,
     ):
-        """Compare real progress with the share of the planned time elapsed."""
+        """Traffic light of the schedule, which is not the same as progress.
+
+        - Late: overdue tasks or milestones (phases that should already be
+          closed), or the end date passed with work still open.
+        - At risk: nothing overdue yet, but real progress is more than
+          ``SCHEDULE_RISK_DEVIATION`` points below the expected one.
+        - On time: otherwise.
+
+        Expected progress is the share of the planned time elapsed and the
+        deviation is real minus expected (negative means behind).
+        """
+        expected = deviation = False
         if (
-            percentage is False
-            or not project.date_start
-            or not project.date
-            or project.date <= project.date_start
+            percentage is not False
+            and project.date_start
+            and project.date
+            and project.date > project.date_start
         ):
-            return {
-                "key": "unplanned",
-                "label": _("Sin planificación"),
-                "detail": _("Faltan las fechas del proyecto o los pesos de las fases"),
-                "expected": False,
-                "deviation": False,
-            }
-        total_days = (project.date - project.date_start).days
-        elapsed_days = min(
-            max((reference_date - project.date_start).days, 0),
-            total_days,
-        )
-        expected = round(elapsed_days * 100 / total_days, 1)
-        deviation = round(expected - percentage, 1)
-        if deviation > 15 or overdue_phase_count:
-            key, label = "late", _("Retrasado")
-        elif deviation > 5:
-            key, label = "attention", _("En atención")
-        else:
-            key, label = "on_time", _("En tiempo")
-        detail = _(
-            "Esperado %(expected)s%% · real %(real)s%%",
-            expected=round(expected),
-            real=round(percentage),
-        )
+            total_days = (project.date - project.date_start).days
+            elapsed_days = min(
+                max((reference_date - project.date_start).days, 0),
+                total_days,
+            )
+            expected = round(elapsed_days * 100 / total_days, 1)
+            deviation = round(percentage - expected, 1)
+
+        reasons = []
+        if overdue_task_count:
+            reasons.append(_("%(count)s tarea(s) vencida(s)", count=overdue_task_count))
         if overdue_phase_count:
+            reasons.append(_("%(count)s hito(s) vencido(s)", count=overdue_phase_count))
+        if project.date and reference_date > project.date and has_open_tasks:
+            reasons.append(_("fecha fin superada"))
+
+        if reasons:
+            key, label = "late", _("Atrasado")
+            detail = " · ".join(reasons)
+            detail = detail[:1].upper() + detail[1:]
+        elif expected is False:
+            key, label = "unplanned", _("Sin planificación")
             detail = _(
-                "%(detail)s · %(count)s hito(s) vencido(s)",
-                detail=detail,
-                count=overdue_phase_count,
+                "Sin vencimientos; faltan fechas del proyecto o pesos de las "
+                "fases para medir el avance esperado"
+            )
+        else:
+            if deviation < -SCHEDULE_RISK_DEVIATION:
+                key, label = "at_risk", _("En riesgo")
+            else:
+                key, label = "on_time", _("A tiempo")
+            detail = _(
+                "Esperado %(expected)s%% · real %(real)s%% · desviación %(deviation)s pts",
+                expected=round(expected),
+                real=round(percentage),
+                deviation=f"{deviation:+.0f}",
             )
         return {
             "key": key,
@@ -1183,6 +1206,22 @@ class ProjectProject(models.Model):
         ])
 
         overdue_domain = [*open_subtask_domain, ("date_deadline", "<", reference_string)]
+        overdue_count = Task.search_count(overdue_domain)
+        # The schedule is always measured on the whole project.
+        project_overdue_count = overdue_count if not phase else Task.search_count([
+            *base_domain,
+            ("parent_id", "!=", False),
+            ("state", "in", Task.OPEN_STATES),
+            ("date_deadline", "<", reference_string),
+        ])
+        has_open_tasks = bool(
+            project.date
+            and reference_date > project.date
+            and Task.search_count(
+                [*base_domain, ("state", "in", Task.OPEN_STATES)],
+                limit=1,
+            )
+        )
         blocked_domain = [*scope_domain, ("state", "=", "04_waiting_normal")]
         blocked_count = Task.search_count(blocked_domain)
 
@@ -1316,10 +1355,12 @@ class ProjectProject(models.Model):
                     project,
                     execution_progress["percentage"],
                     reference_date,
+                    project_overdue_count,
                     overdue_phase_count,
+                    has_open_tasks,
                 ),
                 "overdue": {
-                    "count": Task.search_count(overdue_domain),
+                    "count": overdue_count,
                     "model": "project.task",
                     "domain": overdue_domain,
                 },
