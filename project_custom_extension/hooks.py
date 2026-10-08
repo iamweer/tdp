@@ -136,6 +136,29 @@ def mark_resolved_stage_tasks_done(env):
     return tasks
 
 
+def assign_unified_stages(env):
+    """Asigna la etapa unificada a las etapas de proyecto que no la tienen.
+
+    Al instalar el campo, el catálogo aún no existe y todas quedan vacías.
+    """
+    stages = env["project.task.type"].with_context(active_test=False).search([
+        ("user_id", "=", False),
+        ("unified_stage_id", "=", False),
+    ])
+    stages_by_unified = {}
+    for stage in stages:
+        unified_stage = stage._get_default_unified_stage()
+        if unified_stage:
+            stages_by_unified.setdefault(unified_stage, stage.browse())
+            stages_by_unified[unified_stage] |= stage
+    for unified_stage, unified_stages in stages_by_unified.items():
+        unified_stages.write({"unified_stage_id": unified_stage.id})
+    _logger.info(
+        "Etapas de proyecto con etapa unificada asignada: %s",
+        sum(len(stages) for stages in stages_by_unified.values()),
+    )
+
+
 def post_init_hook(env):
     _copy_field_if_empty(
         env["project.task"],
@@ -156,3 +179,4 @@ def post_init_hook(env):
     configure_project_security(env)
     env["project.project"]._ensure_warranty_automation_activation_date()
     mark_resolved_stage_tasks_done(env)
+    assign_unified_stages(env)

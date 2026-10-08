@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="project_task_unified_stage_view_list" model="ir.ui.view">
+        <field name="name">project.task.unified.stage.list</field>
+        <field name="model">project.task.unified.stage</field>
+        <field name="arch" type="xml">
+            <list editable="bottom">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="fold"/>
+                <field name="active" column_invisible="True"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="project_task_unified_stage_view_form" model="ir.ui.view">
+        <field name="name">project.task.unified.stage.form</field>
+        <field name="model">project.task.unified.stage</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <widget name="web_ribbon" title="Archivada" bg_color="text-bg-danger" invisible="active"/>
+                    <group>
+                        <field name="name"/>
+                        <field name="fold"/>
+                        <field name="active" invisible="1"/>
+                    </group>
+                    <field name="stage_ids">
+                        <list create="false" delete="false">
+                            <field name="name"/>
+                            <field name="project_ids" widget="many2many_tags"/>
+                        </list>
+                    </field>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="project_task_unified_stage_action" model="ir.actions.act_window">
+        <field name="name">Etapas unificadas</field>
+        <field name="res_model">project.task.unified.stage</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Crea una etapa unificada</p>
+            <p>Las etapas unificadas son las columnas de "Mis tareas". Cada etapa de proyecto apunta a una de ellas.</p>
+        </field>
+    </record>
+
+    <menuitem id="menu_project_task_unified_stage"
+              name="Etapas unificadas"
+              parent="project.menu_project_config"
+              action="project_task_unified_stage_action"
+              sequence="11"
+              groups="project.group_project_manager"/>
+
+    <record id="project_task_type_view_form_unified_stage" model="ir.ui.view">
+        <field name="name">project.task.type.form.unified.stage</field>
+        <field name="model">project.task.type</field>
+        <field name="inherit_id" ref="project.task_type_edit"/>
+        <field name="arch" type="xml">
+            <field name="name" position="after">
+                <field name="unified_stage_id" invisible="user_id" options="{'no_create': True}"/>
+            </field>
+        </field>
+    </record>
+
+    <record id="project_task_type_view_list_unified_stage" model="ir.ui.view">
+        <field name="name">project.task.type.list.unified.stage</field>
+        <field name="model">project.task.type</field>
+        <field name="inherit_id" ref="project.task_type_tree"/>
+        <field name="arch" type="xml">
+            <field name="name" position="after">
+                <field name="unified_stage_id" optional="show" options="{'no_create': True}"/>
+            </field>
+        </field>
+    </record>
+
+    <record id="project_task_view_kanban_my_task_unified_stage" model="ir.ui.view">
+        <field name="name">project.task.kanban.my.task.unified.stage</field>
+        <field name="model">project.task</field>
+        <field name="inherit_id" ref="project.view_task_kanban_inherit_my_task"/>
+        <field name="arch" type="xml">
+            <xpath expr="//kanban" position="attributes">
+                <attribute name="default_group_by">unified_stage_id</attribute>
+            </xpath>
+        </field>
+    </record>
+</odoo>

@@ -98,6 +98,9 @@
         <field name="model">project.task</field>
         <field name="inherit_id" ref="project.view_task_search_form_base"/>
         <field name="arch" type="xml">
+            <filter name="stage" position="after">
+                <filter string="Etapa unificada" name="unified_stage" context="{'group_by': 'unified_stage_id'}"/>
+            </filter>
             <filter name="closed_tasks" position="after">
                 <separator groups="project.group_project_manager"/>
                 <filter string="Internas"

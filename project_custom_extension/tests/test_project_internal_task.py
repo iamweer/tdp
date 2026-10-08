@@ -144,19 +144,14 @@ class TestProjectInternalTask(TransactionCase):
     def test_dashboards_exclude_internal_tasks(self):
         Project = self.Project.with_user(self.project_user)
         detail = Project.get_project_detail_dashboard_data(self.project.id)
-        self.assertEqual(detail["progress"]["total_tasks"], 1)
         self.assertEqual(
-            [item["id"] for item in detail["progress"]["parent_tasks"]],
+            [item["id"] for item in detail["phase_progress"]],
             [self.visible_task.id],
         )
-        self.assertEqual(
-            sum(item["count"] for item in detail["activities_by_state"]),
-            1,
-        )
-        sprint_data = Project.get_project_sprint_dashboard_data(self.project.id)
-        self.assertEqual(
-            [task["id"] for task in sprint_data["tasks"]],
-            [self.visible_task.id],
+        self.assertEqual(detail["kpis"]["milestones"]["total"], 1)
+        self.assertNotIn(
+            self.internal_task,
+            self.Task.search(detail["kpis"]["milestones"]["domain"]),
         )
 
         general = self.Project.with_user(self.manager).get_project_dashboard_data()

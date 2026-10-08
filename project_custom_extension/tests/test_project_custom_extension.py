@@ -532,6 +532,8 @@ class TestProjectDashboard(TransactionCase):
             "name": "Subtarea bloqueada",
             "project_id": cls.on_track_project.id,
             "parent_id": cls.safe_task.id,
+            # Explicitly undated: subtasks otherwise inherit the parent deadline.
+            "date_deadline": False,
             "depend_on_ids": [Command.link(cls.blocker_task.id)],
         })
         cls.blocked_subtask.write({"state": "04_waiting_normal"})
@@ -590,6 +592,7 @@ class TestProjectDashboard(TransactionCase):
         self.assertIn(self.partner_b.id, filters["customer_ids"])
         self.assertIn(self.partner_private.id, filters["customer_ids"])
         self.assertNotIn(archived_partner.id, filters["customer_ids"])
+        self.assertIn(self.on_track_project.user_id.id, filters["manager_ids"])
 
         selected_filters = (
             self.env["project.project"].get_project_detail_dashboard_filters(
@@ -606,163 +609,295 @@ class TestProjectDashboard(TransactionCase):
             self.on_track_project.id,
         )
 
-    def test_project_detail_dashboard_returns_project_data_and_activity_metrics(self):
+    def test_project_detail_dashboard_filters_always_select_a_project(self):
+        Project = self.env["project.project"]
+        filters = Project.get_project_detail_dashboard_filters()
+        self.assertTrue(filters["selected_project"])
+        self.assertTrue(Project.browse(filters["selected_project"]["id"]).active)
+
+        # A project of another customer is replaced by one of the customer.
+        filters = Project.get_project_detail_dashboard_filters(
+            self.partner_b.id,
+            self.on_track_project.id,
+        )
+        self.assertEqual(
+            filters["selected_project"]["id"],
+            self.off_track_project.id,
+        )
+
+        manager = new_test_user(
+            self.env,
+            login="project_detail_manager",
+            groups="project.group_project_manager",
+        )
+        managed_project = self._create_project(
+            "Proyecto gestionado",
+            self.partner_b,
+            "on_track",
+            user_id=manager.id,
+        )
+        filters = Project.get_project_detail_dashboard_filters(
+            manager_id=manager.id,
+        )
+        self.assertEqual(filters["selected_manager"]["id"], manager.id)
+        self.assertEqual(filters["selected_project"]["id"], managed_project.id)
+
+        filters = Project.get_project_detail_dashboard_filters(
+            self.partner_a.id,
+            manager_id=manager.id,
+        )
+        self.assertFalse(filters["selected_project"])
+
+        filters = Project.get_project_detail_dashboard_filters(manager_id=999999)
+        self.assertFalse(filters["selected_manager"])
+
+    def test_project_detail_dashboard_returns_kpis_and_tables(self):
         data = self.env["project.project"].get_project_detail_dashboard_data(
             self.on_track_project.id,
             self.partner_a.id,
         )
+        Task = self.env["project.task"]
+        kpis = data["kpis"]
 
         self.assertEqual(data["project"]["id"], self.on_track_project.id)
         self.assertEqual(data["project"]["customer_name"], "Cliente A")
-        self.assertEqual(
-            data["project"]["responsible_name"],
-            self.on_track_project.user_id.display_name or "Sin asignar",
-        )
-        self.assertFalse(data["progress"]["percentage"])
-        self.assertEqual(
-            data["progress"]["total_tasks"],
-            self.on_track_project.task_count,
-        )
-        self.assertEqual(
-            data["progress"]["open_tasks"],
-            self.on_track_project.open_task_count,
-        )
-        self.assertEqual(data["progress"]["mode"], "general")
-        self.assertFalse(data["progress"]["planned"])
-        completed_domain = self._item_by_key(
-            data["progress"]["metrics"], "completed"
-        )["domain"]
-        self.assertIn(("project_id", "=", self.on_track_project.id), completed_domain)
-        self.assertIn(("active", "=", True), completed_domain)
-        self.assertIn(("display_in_project", "=", True), completed_domain)
-        self.assertIn(("state", "in", ["1_done", "1_canceled"]), completed_domain)
-        state_counts = {
-            state["key"]: state["count"]
-            for state in data["activities_by_state"]
-        }
-        self.assertGreaterEqual(state_counts["01_in_progress"], 1)
-        self.assertGreaterEqual(state_counts["1_done"], 1)
-        self.assertEqual(data["critical_activities"]["count"], 2)
-        self.assertEqual(
-            data["critical_activities"]["items"][0]["name"],
-            "Tarea vencida",
-        )
+        self.assertFalse(kpis["progress"]["percentage"])
+        self.assertEqual(kpis["schedule"]["key"], "unplanned")
 
-    def test_project_detail_dashboard_state_scopes_return_matching_domains(self):
-        main_task = self.env["project.task"].create({
-            "name": "Principal hecha",
-            "project_id": self.on_track_project.id,
-            "state": "1_done",
-        })
-        subtask = self.env["project.task"].create({
-            "name": "Subtarea en progreso",
-            "project_id": self.on_track_project.id,
-            "parent_id": main_task.id,
-        })
+        # Only subtasks count as overdue tasks.
+        self.assertEqual(kpis["overdue"]["count"], 1)
+        self.assertEqual(Task.search(kpis["overdue"]["domain"]), self.critical_subtask)
 
-        data = self.env["project.project"].get_project_detail_dashboard_data(
-            self.on_track_project.id,
-            self.partner_a.id,
-        )
-        main_slice = next(
-            state for state in data["activity_states_by_scope"]["main"]
-            if state["key"] == "1_done"
-        )
-        subtask_slice = next(
-            state for state in data["activity_states_by_scope"]["subtasks"]
-            if state["key"] == "01_in_progress"
-        )
+        self.assertEqual(kpis["blockers"]["count"], 1)
+        self.assertEqual(Task.search(kpis["blockers"]["domain"]), self.blocked_subtask)
 
-        self.assertIn(("parent_id", "=", False), main_slice["domain"])
-        self.assertIn(("parent_id", "!=", False), subtask_slice["domain"])
+        self.assertEqual(kpis["milestones"]["total"], 4)
+        self.assertEqual(kpis["milestones"]["done"], 1)
+        self.assertEqual(Task.search_count(kpis["milestones"]["domain"]), 4)
+        self.assertEqual(data["milestone_chart"]["pending"], 3)
         self.assertEqual(
-            self.env["project.task"].search_count(main_slice["domain"]),
-            main_slice["count"],
+            Task.search(data["milestone_chart"]["done_domain"]),
+            self.completed_task,
         )
         self.assertEqual(
-            self.env["project.task"].search_count(subtask_slice["domain"]),
-            subtask_slice["count"],
-        )
-        self.assertIn(main_task, self.env["project.task"].search(main_slice["domain"]))
-        self.assertIn(subtask, self.env["project.task"].search(subtask_slice["domain"]))
-
-    def test_project_detail_dashboard_uses_oldest_overdue_activities(self):
-        now = fields.Datetime.now()
-        earliest = self.env["project.task"].create({
-            "name": "Vencida más antigua",
-            "project_id": self.on_track_project.id,
-            "date_deadline": now - timedelta(days=5),
-        })
-        middle = self.env["project.task"].create({
-            "name": "Vencida intermedia",
-            "project_id": self.on_track_project.id,
-            "date_deadline": now - timedelta(days=3),
-        })
-
-        data = self.env["project.project"].get_project_detail_dashboard_data(
-            self.on_track_project.id,
-            self.partner_a.id,
+            {item["id"] for item in data["phase_progress"]},
+            {
+                self.completed_task.id,
+                self.safe_task.id,
+                self.blocker_task.id,
+                self.overdue_task.id,
+            },
         )
 
-        self.assertEqual(data["critical_activities"]["count"], 4)
+        commitments = data["commitments"]
+        self.assertEqual(commitments["count"], 2)
         self.assertEqual(
-            [item["id"] for item in data["critical_activities"]["items"]],
-            [earliest.id, middle.id, self.overdue_task.id],
+            [(item["id"], item["status"]) for item in commitments["items"]],
+            [
+                (self.critical_subtask.id, "overdue"),
+                (self.upcoming_subtask.id, "at_risk"),
+            ],
         )
 
-    def test_project_detail_dashboard_falls_back_to_general_progress_after_ten_parents(self):
+        risk = data["risks"]["items"][0]
+        self.assertEqual(data["risks"]["count"], 1)
+        self.assertEqual(risk["id"], self.blocked_subtask.id)
+        self.assertEqual(risk["priority"], "medium")
+        self.assertIn("Tarea bloqueadora", risk["next_action"])
+
+    def test_project_detail_dashboard_star_priority_and_workload(self):
+        first_user, second_user = (
+            new_test_user(
+                self.env,
+                login=login,
+                groups="project.group_project_user",
+            )
+            for login in ("detail_workload_first", "detail_workload_second")
+        )
         project = self._create_project(
-            "Proyecto con muchas tareas padre",
+            "Proyecto con carga",
             self.partner_a,
             "on_track",
+            allow_task_dependencies=True,
         )
-        for index in range(11):
-            parent = self.env["project.task"].create({
-                "name": f"Tarea padre {index}",
-                "project_id": project.id,
-                "project_weight": 5,
-            })
-            self.env["project.task"].create({
-                "name": f"Subtarea {index}",
-                "project_id": project.id,
-                "parent_id": parent.id,
-            })
+        Task = self.env["project.task"]
+        phase = Task.create({"name": "Fase", "project_id": project.id})
+        blocker = Task.create({
+            "name": "Bloqueante",
+            "project_id": project.id,
+            "parent_id": phase.id,
+            "user_ids": [Command.set(second_user.ids)],
+        })
+        Task.create({
+            "name": "Compartida",
+            "project_id": project.id,
+            "parent_id": phase.id,
+            "user_ids": [Command.set((first_user | second_user).ids)],
+        })
+        Task.create({
+            "name": "Hecha",
+            "project_id": project.id,
+            "parent_id": phase.id,
+            "state": "1_done",
+            "user_ids": [Command.set(first_user.ids)],
+        })
+        blocked = Task.create({
+            "name": "Bloqueada con estrella",
+            "project_id": project.id,
+            "parent_id": phase.id,
+            "priority": "1",
+            "user_ids": [Command.set(first_user.ids)],
+            "depend_on_ids": [Command.link(blocker.id)],
+        })
+        blocked.write({"state": "04_waiting_normal"})
 
         data = self.env["project.project"].get_project_detail_dashboard_data(
             project.id,
-            self.partner_a.id,
         )
 
-        self.assertEqual(data["progress"]["mode"], "general")
-        self.assertEqual(len(data["progress"]["parent_tasks"]), 11)
+        workload = {item["name"]: item for item in data["workload"]}
+        self.assertEqual(workload[first_user.name]["count"], 2)
+        self.assertEqual(workload[second_user.name]["count"], 2)
+        self.assertEqual(
+            Task.search_count(workload[first_user.name]["domain"]),
+            2,
+        )
+        risk = data["risks"]["items"][0]
+        self.assertEqual(risk["priority"], "high")
+        self.assertEqual(risk["responsible"], first_user.name)
+        self.assertEqual(risk["next_action_owner"], second_user.name)
+        commitments = data["commitments"]["items"]
+        self.assertFalse(commitments)
+
+    def test_project_detail_dashboard_schedule_compares_expected_progress(self):
+        today = fields.Date.context_today(self.env["project.project"])
+        project = self._create_project(
+            "Proyecto planificado",
+            self.partner_a,
+            "on_track",
+            date_start=today - timedelta(days=60),
+            date=today + timedelta(days=40),
+        )
+        phase = self._create_weighted_task(project, "Fase única", 100)
+        self._create_weighted_task(project, "Hecha", parent=phase, state="1_done")
+        self._create_weighted_task(project, "Pendiente", parent=phase)
+
+        def schedule(cutoff=False):
+            return self.env["project.project"].get_project_detail_dashboard_data(
+                project.id,
+                cutoff=cutoff,
+            )["kpis"]["schedule"]
+
+        # Expected 60%, real 50%.
+        self.assertEqual(schedule()["key"], "attention")
+        self.assertEqual(schedule()["expected"], 60.0)
+
+        project.date = today + timedelta(days=60)
+        self.assertEqual(schedule()["key"], "on_time")
+
+        project.date = today + timedelta(days=1)
+        self.assertEqual(schedule()["key"], "late")
+
+        project.date = today + timedelta(days=60)
+        phase.date_deadline = fields.Datetime.now() - timedelta(days=1)
+        self.assertEqual(schedule()["key"], "late")
+
+        # Before the project starts nothing is expected yet.
+        start = today - timedelta(days=60)
+        previous_month = (start.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+        self.assertEqual(schedule(previous_month)["expected"], 0.0)
+
+    def test_project_detail_dashboard_phase_filter_and_cutoff(self):
+        Project = self.env["project.project"]
+        safe_phase = Project.get_project_detail_dashboard_data(
+            self.on_track_project.id,
+            phase_id=self.safe_task.id,
+        )
+        self.assertEqual(safe_phase["filters"]["phase_id"], self.safe_task.id)
+        self.assertEqual(safe_phase["kpis"]["overdue"]["count"], 1)
+        self.assertEqual(safe_phase["kpis"]["blockers"]["count"], 1)
+        # Milestones still cover the whole project.
+        self.assertEqual(safe_phase["kpis"]["milestones"]["total"], 4)
+        self.assertTrue(next(
+            item for item in safe_phase["phase_progress"]
+            if item["id"] == self.safe_task.id
+        )["selected"])
+
+        done_phase = Project.get_project_detail_dashboard_data(
+            self.on_track_project.id,
+            phase_id=self.completed_task.id,
+        )
+        self.assertEqual(done_phase["kpis"]["overdue"]["count"], 0)
+        self.assertEqual(done_phase["kpis"]["blockers"]["count"], 0)
+
+        for invalid_phase in (self.critical_subtask.id, "invalid"):
+            self.assertFalse(Project.get_project_detail_dashboard_data(
+                self.on_track_project.id,
+                phase_id=invalid_phase,
+            )["project"])
+
+        past = Project.get_project_detail_dashboard_data(
+            self.on_track_project.id,
+            cutoff="2020-02",
+        )
+        self.assertEqual(past["filters"]["reference_date"], "2020-02-29")
+        self.assertEqual(past["kpis"]["overdue"]["count"], 0)
+        self.assertEqual(
+            [item["status"] for item in past["commitments"]["items"]],
+            ["on_time", "on_time"],
+        )
+
+        today = fields.Date.context_today(Project)
+        current = Project.get_project_detail_dashboard_data(
+            self.on_track_project.id,
+            cutoff=today.strftime("%Y-%m"),
+        )
+        self.assertEqual(
+            current["filters"]["reference_date"],
+            fields.Date.to_string(today),
+        )
+        self.assertFalse(Project.get_project_detail_dashboard_data(
+            self.on_track_project.id,
+            cutoff="2020-13",
+        )["project"])
 
     def test_project_detail_dashboard_validates_customer_and_active_project(self):
+        Project = self.env["project.project"]
         self.assertFalse(
-            self.env["project.project"].get_project_detail_dashboard_data(
+            Project.get_project_detail_dashboard_data(
                 self.on_track_project.id,
                 self.partner_b.id,
             )["project"]
         )
         self.assertFalse(
-            self.env["project.project"].get_project_detail_dashboard_data(
+            Project.get_project_detail_dashboard_data(
                 self.archived_project.id,
                 self.partner_a.id,
             )["project"]
         )
         self.assertFalse(
-            self.env["project.project"].get_project_detail_dashboard_data(
+            Project.get_project_detail_dashboard_data(
                 "invalid",
                 self.partner_a.id,
             )["project"]
         )
+        other_manager = new_test_user(
+            self.env,
+            login="project_detail_other_manager",
+            groups="project.group_project_manager",
+        )
+        self.assertFalse(
+            Project.get_project_detail_dashboard_data(
+                self.on_track_project.id,
+                manager_id=other_manager.id,
+            )["project"]
+        )
 
-        unassigned_project = self.env["project.project"].create({
+        unassigned_project = Project.create({
             "name": "Proyecto sin cliente",
         })
-        unassigned_data = (
-            self.env["project.project"].get_project_detail_dashboard_data(
-                unassigned_project.id,
-            )
+        unassigned_data = Project.get_project_detail_dashboard_data(
+            unassigned_project.id,
         )
         self.assertEqual(
             unassigned_data["project"]["customer_name"],
@@ -781,6 +916,10 @@ class TestProjectDashboard(TransactionCase):
         )
 
         self.assertNotIn(self.partner_private.id, filters["customer_ids"])
+        self.assertNotEqual(
+            filters["selected_project"] and filters["selected_project"]["id"],
+            self.private_project.id,
+        )
         self.assertFalse(data["project"])
 
     def test_dashboard_metrics_customer_filter_and_click_domains(self):
@@ -890,15 +1029,22 @@ class TestProjectDashboard(TransactionCase):
             self.partner_a.id,
         )
         project_row = next(row for row in dashboard["projects"] if row["id"] == project.id)
-        self.assertEqual(detail["progress"]["mode"], "parents")
-        self.assertEqual(detail["progress"]["percentage"], 13.0)
+        self.assertEqual(detail["kpis"]["progress"]["percentage"], 13.0)
         self.assertEqual(project_row["progress"], 13.0)
-        phases = {item["id"]: item for item in detail["progress"]["parent_tasks"]}
-        self.assertEqual(phases[first.id]["weight_percentage"], 20.0)
+        phases = {item["id"]: item for item in detail["phase_progress"]}
+        self.assertEqual(phases[first.id]["weight"], 20.0)
         self.assertEqual(phases[first.id]["percentage"], 40.0)
-        self.assertEqual(phases[first.id]["completed_subtasks"], 2)
-        self.assertEqual(phases[first.id]["total_subtasks"], 5)
-        self.assertEqual(phases[second.id]["weight_percentage"], 10.0)
+        self.assertEqual(phases[first.id]["completed"], 2)
+        self.assertEqual(phases[first.id]["total"], 5)
+        self.assertEqual(phases[second.id]["weight"], 10.0)
+
+        phase_detail = self.env["project.project"].get_project_detail_dashboard_data(
+            project.id,
+            phase_id=first.id,
+        )
+        self.assertEqual(phase_detail["kpis"]["progress"]["percentage"], 40.0)
+        self.assertEqual(phase_detail["kpis"]["progress"]["completed"], 2)
+        self.assertEqual(phase_detail["kpis"]["progress"]["total"], 5)
 
     def test_project_progress_ignores_canceled_and_splits_nested_subtasks(self):
         project = self._create_project(
@@ -1132,85 +1278,6 @@ class TestProjectDashboard(TransactionCase):
             [row["id"] for row in data["projects"]],
         )
         self.assertNotIn(self.partner_private.id, data["customer_ids"])
-
-    def test_sprint_dashboard_orders_tasks_and_filters_by_sprint(self):
-        project = self._create_project(
-            "Proyecto con Sprints",
-            self.partner_a,
-            "on_track",
-        )
-        first_sprint = self.env["project.sprint"].create({
-            "name": "Sprint primero",
-            "project_id": project.id,
-            "sequence": 10,
-        })
-        second_sprint = self.env["project.sprint"].create({
-            "name": "Sprint segundo",
-            "project_id": project.id,
-            "sequence": 20,
-        })
-        task_unprioritized = self.env["project.task"].create({
-            "name": "Sin prioridad",
-            "project_id": project.id,
-            "sprint_id": first_sprint.id,
-            "state": "1_canceled",
-        })
-        task_first = self.env["project.task"].create({
-            "name": "Prioridad uno",
-            "project_id": project.id,
-            "sprint_id": first_sprint.id,
-            "hierarchical_priority": 1,
-            "state": "1_done",
-        })
-        task_later_sprint = self.env["project.task"].create({
-            "name": "Sprint posterior",
-            "project_id": project.id,
-            "sprint_id": second_sprint.id,
-            "hierarchical_priority": 1,
-        })
-        task_without_sprint = self.env["project.task"].create({
-            "name": "Sin Sprint",
-            "project_id": project.id,
-        })
-
-        all_data = self.env["project.project"].get_project_sprint_dashboard_data(
-            project.id,
-        )
-        first_data = self.env["project.project"].get_project_sprint_dashboard_data(
-            project.id,
-            str(first_sprint.id),
-        )
-        none_data = self.env["project.project"].get_project_sprint_dashboard_data(
-            project.id,
-            "none",
-        )
-        detail = self.env["project.project"].get_project_detail_dashboard_data(
-            project.id,
-            self.partner_a.id,
-        )
-        sprint_summaries = {item["id"]: item for item in detail["sprints"]}
-
-        self.assertEqual(all_data["count"], 4)
-        self.assertEqual(
-            [task["id"] for task in all_data["tasks"]],
-            [task_first.id, task_unprioritized.id, task_later_sprint.id, task_without_sprint.id],
-        )
-        self.assertEqual(first_data["count"], 2)
-        self.assertEqual(first_data["tasks"][0]["id"], task_first.id)
-        self.assertEqual(none_data["count"], 1)
-        self.assertEqual(none_data["tasks"][0]["id"], task_without_sprint.id)
-        self.assertEqual(sprint_summaries[first_sprint.id]["total"], 2)
-        self.assertEqual(sprint_summaries[False]["total"], 1)
-        first_sprint_states = {
-            state["key"]: state["count"]
-            for state in sprint_summaries[first_sprint.id]["states"]
-        }
-        self.assertEqual(first_sprint_states["1_done"], 1)
-        self.assertEqual(first_sprint_states["1_canceled"], 1)
-        self.assertEqual(
-            self.env["project.task"].search_count(first_data["domain"]),
-            first_data["count"],
-        )
 
     def test_sprint_permissions_follow_project_visibility_and_clients_read_only(self):
         project = self._create_project(

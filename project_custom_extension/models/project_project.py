@@ -1,4 +1,7 @@
-from datetime import date, datetime, timedelta
+import calendar
+from datetime import date, datetime, time, timedelta
+
+import pytz
 
 from lxml import etree
 
@@ -661,42 +664,80 @@ class ProjectProject(models.Model):
         }
 
     @api.model
-    def get_project_detail_dashboard_filters(self, partner_id=False, project_id=False):
-        """Return filter options and any valid persisted selection."""
+    def _project_detail_project_domain(self, partner_id=False, manager_id=False):
+        domain = [("active", "=", True)]
+        if partner_id:
+            domain.append(("partner_id", "=", partner_id))
+        if manager_id:
+            domain.append(("user_id", "=", manager_id))
+        return domain
+
+    @api.model
+    def get_project_detail_dashboard_filters(
+        self,
+        partner_id=False,
+        project_id=False,
+        manager_id=False,
+    ):
+        """Return filter options and a selected project.
+
+        The detail dashboard always works on one project: when the persisted
+        project does not match the filters, the first matching one is used.
+        """
         Project = self.env["project.project"]
-        partner_groups = Project._read_group(
-            [
-                ("active", "=", True),
-                ("partner_id", "!=", False),
-            ],
-            ["partner_id"],
-            ["__count"],
-        )
         partner_ids = sorted(
-            partner.id for partner, _count in partner_groups if partner
+            partner.id
+            for partner, _count in Project._read_group(
+                [("active", "=", True), ("partner_id", "!=", False)],
+                ["partner_id"],
+                ["__count"],
+            )
+            if partner
+        )
+        manager_ids = sorted(
+            user.id
+            for user, _count in Project._read_group(
+                [("active", "=", True), ("user_id", "!=", False)],
+                ["user_id"],
+                ["__count"],
+            )
+            if user
         )
         partner_id = self._dashboard_integer_id(partner_id)
         if partner_id not in partner_ids:
             partner_id = False
+        manager_id = self._dashboard_integer_id(manager_id)
+        if manager_id not in manager_ids:
+            manager_id = False
 
-        selected_partner = self.env["res.partner"].browse(partner_id)
+        project_domain = self._project_detail_project_domain(partner_id, manager_id)
         selected_project = Project.browse()
         project_id = self._dashboard_integer_id(project_id)
         if project_id:
-            project_domain = [
-                ("id", "=", project_id),
-                ("active", "=", True),
-            ]
-            if partner_id:
-                project_domain.append(("partner_id", "=", partner_id))
-            selected_project = Project.search(project_domain, limit=1)
+            selected_project = Project.search(
+                [("id", "=", project_id), *project_domain],
+                limit=1,
+            )
+        if not selected_project:
+            selected_project = Project.search(
+                project_domain,
+                order="name, id",
+                limit=1,
+            )
 
+        selected_partner = self.env["res.partner"].browse(partner_id)
+        selected_manager = self.env["res.users"].browse(manager_id)
         return {
             "customer_ids": partner_ids,
+            "manager_ids": manager_ids,
             "selected_customer": {
                 "id": selected_partner.id,
                 "display_name": selected_partner.display_name,
             } if selected_partner else False,
+            "selected_manager": {
+                "id": selected_manager.id,
+                "display_name": selected_manager.display_name,
+            } if selected_manager else False,
             "selected_project": {
                 "id": selected_project.id,
                 "display_name": selected_project.display_name,
@@ -705,21 +746,7 @@ class ProjectProject(models.Model):
 
     @api.model
     def _empty_project_detail_dashboard_data(self):
-        return {
-            "project": False,
-            "progress": False,
-            "activities_by_state": [],
-            "activity_states_by_scope": {
-                "all": [],
-                "main": [],
-                "subtasks": [],
-            },
-            "sprints": [],
-            "critical_activities": {
-                "count": 0,
-                "items": [],
-            },
-        }
+        return {"project": False}
 
     @api.model
     def _dashboard_integer_id(self, value):
@@ -986,311 +1013,348 @@ class ProjectProject(models.Model):
         }
 
     @api.model
-    def get_project_detail_dashboard_data(self, project_id=False, partner_id=False):
-        """Return data for one active project, scoped to the selected customer."""
+    def _project_detail_reference_date(self, cutoff=False):
+        """Return the cutoff date: today for the current month (or no cutoff),
+        otherwise the last day of the ``YYYY-MM`` month. ``None`` if invalid."""
+        today = fields.Date.context_today(self)
+        if not cutoff:
+            return today
+        try:
+            year, month = (int(part) for part in str(cutoff).split("-"))
+            reference_date = date(year, month, calendar.monthrange(year, month)[1])
+        except (TypeError, ValueError):
+            return None
+        if (year, month) == (today.year, today.month):
+            return today
+        return reference_date
+
+    @api.model
+    def _project_detail_reference_datetime(self, reference_date):
+        """UTC limit for deadlines: now for today, else the end of that day."""
+        if reference_date == fields.Date.context_today(self):
+            return fields.Datetime.now()
+        timezone = pytz.timezone(
+            self.env.context.get("tz") or self.env.user.tz or "UTC"
+        )
+        local_limit = timezone.localize(
+            datetime.combine(reference_date + timedelta(days=1), time.min)
+        )
+        return local_limit.astimezone(pytz.utc).replace(tzinfo=None)
+
+    @api.model
+    def _project_detail_local_date(self, value):
+        return fields.Datetime.context_timestamp(self, value).date()
+
+    @api.model
+    def _project_detail_schedule(
+        self,
+        project,
+        percentage,
+        reference_date,
+        overdue_phase_count,
+    ):
+        """Compare real progress with the share of the planned time elapsed."""
+        if (
+            percentage is False
+            or not project.date_start
+            or not project.date
+            or project.date <= project.date_start
+        ):
+            return {
+                "key": "unplanned",
+                "label": _("Sin planificación"),
+                "detail": _("Faltan las fechas del proyecto o los pesos de las fases"),
+                "expected": False,
+                "deviation": False,
+            }
+        total_days = (project.date - project.date_start).days
+        elapsed_days = min(
+            max((reference_date - project.date_start).days, 0),
+            total_days,
+        )
+        expected = round(elapsed_days * 100 / total_days, 1)
+        deviation = round(expected - percentage, 1)
+        if deviation > 15 or overdue_phase_count:
+            key, label = "late", _("Retrasado")
+        elif deviation > 5:
+            key, label = "attention", _("En atención")
+        else:
+            key, label = "on_time", _("En tiempo")
+        detail = _(
+            "Esperado %(expected)s%% · real %(real)s%%",
+            expected=round(expected),
+            real=round(percentage),
+        )
+        if overdue_phase_count:
+            detail = _(
+                "%(detail)s · %(count)s hito(s) vencido(s)",
+                detail=detail,
+                count=overdue_phase_count,
+            )
+        return {
+            "key": key,
+            "label": label,
+            "detail": detail,
+            "expected": expected,
+            "deviation": deviation,
+        }
+
+    @api.model
+    def get_project_detail_dashboard_data(
+        self,
+        project_id=False,
+        partner_id=False,
+        manager_id=False,
+        phase_id=False,
+        cutoff=False,
+    ):
+        """Return the executive dashboard of one active project.
+
+        Phases (milestones) are the top-level tasks and tasks are their
+        subtasks. Blocked tasks are those waiting on open dependencies.
+        """
         Project = self.env["project.project"]
         Task = self.env["project.task"]
         project_id = self._dashboard_integer_id(project_id)
         partner_id = self._dashboard_integer_id(partner_id)
-        if project_id is None or partner_id is None:
+        manager_id = self._dashboard_integer_id(manager_id)
+        phase_id = self._dashboard_integer_id(phase_id)
+        if None in (project_id, partner_id, manager_id, phase_id) or not project_id:
             return self._empty_project_detail_dashboard_data()
-        if not project_id:
+        reference_date = self._project_detail_reference_date(cutoff)
+        if not reference_date:
             return self._empty_project_detail_dashboard_data()
-
-        project_domain = [
+        project = Project.search([
             ("id", "=", project_id),
-            ("active", "=", True),
-        ]
-        if partner_id:
-            project_domain.append(("partner_id", "=", partner_id))
-        project = Project.search(project_domain, limit=1)
+            *self._project_detail_project_domain(partner_id, manager_id),
+        ], limit=1)
         if not project:
             return self._empty_project_detail_dashboard_data()
 
-        status_labels = dict(
-            Project._fields["last_update_status"]._description_selection(self.env)
-        )
-        task_state_labels = dict(
-            Task._fields["state"]._description_selection(self.env)
-        )
-        project_tasks = Task.search([
+        base_domain = [
             ("project_id", "=", project.id),
             ("active", "=", True),
-            *VISIBLE_TASK_DOMAIN,
-        ])
-        progress_task_domain = [
-            ("project_id", "=", project.id),
-            ("active", "=", True),
-            ("display_in_project", "=", True),
             *VISIBLE_TASK_DOMAIN,
         ]
-        closed_states = ["1_done", "1_canceled"]
-        progress_metrics = []
-        for key, title, extra_domain in (
-            (
-                "total",
-                _("Total de actividades"),
-                [],
-            ),
-            (
-                "completed",
-                _("Completadas"),
-                [("state", "in", closed_states)],
-            ),
-            (
-                "open",
-                _("Pendientes"),
-                [("state", "in", Task.OPEN_STATES)],
-            ),
-        ):
-            domain = expression.AND([progress_task_domain, extra_domain])
-            count = {
-                "total": project.task_count,
-                "completed": project.task_count - project.open_task_count,
-                "open": project.open_task_count,
-            }[key]
-            progress_metrics.append({
-                "key": key,
-                "title": title,
-                "count": count,
-                "model": "project.task",
-                "domain": domain,
-            })
-
-        main_tasks = Task.search(
-            [
-                ("project_id", "=", project.id),
-                ("active", "=", True),
-                ("parent_id", "=", False),
-                *VISIBLE_TASK_DOMAIN,
-            ],
-            order="sequence, name, id",
-        )
+        project_tasks = Task.search(base_domain)
         execution_progress = self._get_project_execution_progress(
             project,
             project_tasks,
         )
-        phase_progress = execution_progress["phases"]
-        parent_progress = [{
+        phases = execution_progress["phases"]
+        phase = Task.browse()
+        if phase_id:
+            phase = project_tasks.filtered(
+                lambda task: task.id == phase_id and not task.parent_id
+            )
+            if not phase:
+                return self._empty_project_detail_dashboard_data()
+
+        reference_datetime = self._project_detail_reference_datetime(reference_date)
+        reference_string = fields.Datetime.to_string(reference_datetime)
+        scope_domain = [*base_domain, ("id", "child_of", phase.id)] if phase else base_domain
+        subtask_domain = [*scope_domain, ("parent_id", "!=", False)]
+        open_subtask_domain = [*subtask_domain, ("state", "in", Task.OPEN_STATES)]
+        phase_domain = [*base_domain, ("parent_id", "=", False)]
+
+        def user_names(users):
+            return ", ".join(users.mapped("name")) or _("Sin asignar")
+
+        # Progress: the whole project, or the selected phase.
+        scoped_phases = [
+            item for item in phases if not phase or item["task"] == phase
+        ]
+        if phase:
+            percentage = round(scoped_phases[0]["percentage"] * 100, 1)
+        else:
+            percentage = execution_progress["percentage"]
+        completed_count = sum(item["completed_count"] for item in scoped_phases)
+        total_count = sum(item["total_count"] for item in scoped_phases)
+
+        # Milestones always cover the whole project.
+        milestones = [item for item in phases if item["task"].state != "1_canceled"]
+        done_milestones = [item for item in milestones if item["task"].state == "1_done"]
+        milestone_domain = [*phase_domain, ("state", "!=", "1_canceled")]
+        done_milestone_domain = [*phase_domain, ("state", "=", "1_done")]
+        pending_milestone_domain = [*phase_domain, ("state", "in", Task.OPEN_STATES)]
+        overdue_phase_count = Task.search_count([
+            *pending_milestone_domain,
+            ("date_deadline", "<", reference_string),
+        ])
+
+        overdue_domain = [*open_subtask_domain, ("date_deadline", "<", reference_string)]
+        blocked_domain = [*scope_domain, ("state", "=", "04_waiting_normal")]
+        blocked_count = Task.search_count(blocked_domain)
+
+        # Workload: open subtasks per assignee.
+        open_subtasks = Task.search(open_subtask_domain)
+        workload_by_user = {}
+        unassigned_count = 0
+        for task in open_subtasks:
+            if not task.user_ids:
+                unassigned_count += 1
+            for user in task.user_ids:
+                workload_by_user[user] = workload_by_user.get(user, 0) + 1
+        workload = [{
+            "key": f"user_{user.id}",
+            "name": user.name,
+            "count": count,
+            "model": "project.task",
+            "domain": [*open_subtask_domain, ("user_ids", "in", user.id)],
+        } for user, count in sorted(
+            workload_by_user.items(),
+            key=lambda item: (-item[1], item[0].name or "", item[0].id),
+        )]
+        if unassigned_count:
+            workload.append({
+                "key": "unassigned",
+                "name": _("Sin asignar"),
+                "count": unassigned_count,
+                "model": "project.task",
+                "domain": [*open_subtask_domain, ("user_ids", "=", False)],
+            })
+
+        # Upcoming commitments: open subtasks by deadline, overdue first.
+        commitment_domain = [*open_subtask_domain, ("date_deadline", "!=", False)]
+        commitments = []
+        for task in Task.search(
+            commitment_domain,
+            order="date_deadline asc, id asc",
+            limit=5,
+        ):
+            deadline = self._project_detail_local_date(task.date_deadline)
+            if task.state == "04_waiting_normal":
+                status, status_label = "blocked", _("Bloqueada")
+            elif task.date_deadline < reference_datetime:
+                status, status_label = "overdue", _("Vencida")
+            elif (deadline - reference_date).days <= 3:
+                status, status_label = "at_risk", _("En riesgo")
+            else:
+                status, status_label = "on_time", _("En tiempo")
+            commitments.append({
+                "id": task.id,
+                "name": task.display_name,
+                "responsible": user_names(task.user_ids),
+                "deadline": fields.Date.to_string(deadline),
+                "status": status,
+                "status_label": status_label,
+            })
+
+        # Risks and blockers: tasks waiting on open dependencies.
+        risks = []
+        for task in Task.search(
+            blocked_domain,
+            order="priority desc, date_deadline asc, id asc",
+            limit=5,
+        ):
+            blockers = task.depend_on_ids.filtered(
+                lambda blocker: blocker.state in Task.OPEN_STATES
+            )
+            if blockers:
+                next_action = _("Cerrar «%(task)s»", task=blockers[0].display_name)
+                if len(blockers) > 1:
+                    next_action = _(
+                        "%(action)s y %(count)s más",
+                        action=next_action,
+                        count=len(blockers) - 1,
+                    )
+                next_action_owner = user_names(blockers[0].user_ids)
+            else:
+                next_action = _("Revisar dependencias")
+                next_action_owner = False
+            high_priority = task.priority == "1"
+            risks.append({
+                "id": task.id,
+                "name": task.display_name,
+                "priority": "high" if high_priority else "medium",
+                "priority_label": _("Alta") if high_priority else _("Media"),
+                "responsible": user_names(task.user_ids),
+                "next_action": next_action,
+                "next_action_owner": next_action_owner,
+            })
+
+        phase_progress = [{
             "id": item["task"].id,
             "name": item["task"].display_name,
             "percentage": round(item["percentage"] * 100, 1),
-            "completed_subtasks": item["completed_count"],
-            "total_subtasks": item["total_count"],
-            "weight_percentage": round(item["weight"], 2),
+            "weight": round(item["weight"], 2),
+            "completed": item["completed_count"],
+            "total": item["total_count"],
+            "selected": item["task"] == phase,
             "model": "project.task",
-            "domain": [
-                ("project_id", "=", project.id),
-                ("active", "=", True),
-                ("id", "child_of", item["task"].id),
-                *VISIBLE_TASK_DOMAIN,
-            ],
-        } for item in phase_progress]
-        progress_mode = (
-            "parents"
-            if (
-                execution_progress["percentage"] is not False
-                and len(main_tasks) <= 10
-            )
-            else "general"
-        )
-
-        activity_states_by_scope = {}
-        for scope, scope_domain in (
-            ("all", []),
-            ("main", [("parent_id", "=", False)]),
-            ("subtasks", [("parent_id", "!=", False)]),
-        ):
-            scope_tasks = project_tasks.filtered(
-                lambda task: scope == "all"
-                or (scope == "main" and not task.parent_id)
-                or (scope == "subtasks" and bool(task.parent_id))
-            )
-            scope_counts = {}
-            for task in scope_tasks:
-                scope_counts[task.state] = scope_counts.get(task.state, 0) + 1
-            activity_states_by_scope[scope] = [
-                {
-                    "key": state,
-                    "label": label,
-                    "count": scope_counts.get(state, 0),
-                    "model": "project.task",
-                    "domain": [
-                        ("project_id", "=", project.id),
-                        ("active", "=", True),
-                        ("state", "=", state),
-                        *scope_domain,
-                        *VISIBLE_TASK_DOMAIN,
-                    ],
-                }
-                for state, label in task_state_labels.items()
-                if scope_counts.get(state, 0)
-            ]
-        activities_by_state = activity_states_by_scope["all"]
-
-        sprints = self.env["project.sprint"].search(
-            [("project_id", "=", project.id)],
-            order="sequence, name, id",
-        )
-        sprint_summary = {
-            sprint.id: {"total": 0, "state_counts": {}}
-            for sprint in sprints
-        }
-        sprint_summary[False] = {"total": 0, "state_counts": {}}
-        for task in project_tasks:
-            summary = sprint_summary.setdefault(
-                task.sprint_id.id or False,
-                {"total": 0, "state_counts": {}},
-            )
-            summary["total"] += 1
-            summary["state_counts"][task.state] = (
-                summary["state_counts"].get(task.state, 0) + 1
-            )
-
-        def serialize_sprint_summary(sprint_id):
-            summary = sprint_summary[sprint_id]
-            return {
-                "total": summary["total"],
-                "states": [{
-                    "key": state,
-                    "label": task_state_labels.get(state, state),
-                    "count": summary["state_counts"][state],
-                } for state in task_state_labels
-                    if summary["state_counts"].get(state)],
-            }
-
-        sprint_data = [{
-            "id": sprint.id,
-            "name": sprint.display_name,
-            "sequence": sprint.sequence,
-            **serialize_sprint_summary(sprint.id),
-        } for sprint in sprints]
-        sprint_data.append({
-            "id": False,
-            "name": _("Sin Sprint"),
-            "sequence": 2147483647,
-            **serialize_sprint_summary(False),
-        })
-
-        current_datetime = fields.Datetime.to_string(fields.Datetime.now())
-        critical_domain = [
-            ("project_id", "=", project.id),
-            ("active", "=", True),
-            ("state", "in", Task.OPEN_STATES),
-            ("date_deadline", "<", current_datetime),
-            *VISIBLE_TASK_DOMAIN,
-        ]
-        critical_tasks = Task.search(
-            critical_domain,
-            order="date_deadline asc, id asc",
-            limit=3,
-        )
-        critical_items = [{
-            "id": task.id,
-            "name": task.display_name,
-            "deadline": fields.Date.to_string(task.date_deadline.date()),
-        } for task in critical_tasks]
+            "domain": [*base_domain, ("id", "child_of", item["task"].id)],
+        } for item in milestones]
 
         return {
             "project": {
                 "id": project.id,
                 "name": project.display_name,
-                "customer_name": project.partner_id.display_name or _(
-                    "Sin cliente"
-                ),
-                "responsible_name": project.user_id.display_name or _(
-                    "Sin asignar"
-                ),
+                "customer_name": project.partner_id.display_name or _("Sin cliente"),
+                "responsible_name": project.user_id.display_name or _("Sin asignar"),
                 "start_date": fields.Date.to_string(project.date_start)
                 if project.date_start else False,
                 "end_date": fields.Date.to_string(project.date)
                 if project.date else False,
-                "status": project.last_update_status,
-                "status_label": status_labels.get(
-                    project.last_update_status,
-                    project.last_update_status,
+            },
+            "filters": {
+                "phases": [{
+                    "id": item["task"].id,
+                    "name": item["task"].display_name,
+                } for item in phases],
+                "phase_id": phase.id or False,
+                "reference_date": fields.Date.to_string(reference_date),
+            },
+            "kpis": {
+                "progress": {
+                    "percentage": percentage,
+                    "completed": completed_count,
+                    "total": total_count,
+                    "model": "project.task",
+                    "domain": subtask_domain,
+                },
+                "schedule": self._project_detail_schedule(
+                    project,
+                    execution_progress["percentage"],
+                    reference_date,
+                    overdue_phase_count,
                 ),
+                "overdue": {
+                    "count": Task.search_count(overdue_domain),
+                    "model": "project.task",
+                    "domain": overdue_domain,
+                },
+                "milestones": {
+                    "done": len(done_milestones),
+                    "total": len(milestones),
+                    "model": "project.task",
+                    "domain": milestone_domain,
+                },
+                "blockers": {
+                    "count": blocked_count,
+                    "model": "project.task",
+                    "domain": blocked_domain,
+                },
             },
-            "progress": {
-                "mode": progress_mode,
-                "percentage": execution_progress["percentage"],
-                "planned": execution_progress["percentage"] is not False,
-                "total_tasks": project.task_count,
-                "completed_tasks": project.task_count - project.open_task_count,
-                "open_tasks": project.open_task_count,
-                "metrics": progress_metrics,
-                "parent_tasks": parent_progress,
+            "phase_progress": phase_progress,
+            "milestone_chart": {
+                "done": len(done_milestones),
+                "pending": len(milestones) - len(done_milestones),
+                "done_domain": done_milestone_domain,
+                "pending_domain": pending_milestone_domain,
             },
-            "activities_by_state": activities_by_state,
-            "activity_states_by_scope": activity_states_by_scope,
-            "sprints": sprint_data,
-            "critical_activities": {
-                "count": Task.search_count(critical_domain),
-                "items": critical_items,
+            "workload": workload,
+            "commitments": {
+                "count": Task.search_count(commitment_domain),
+                "items": commitments,
+                "model": "project.task",
+                "domain": commitment_domain,
             },
-        }
-
-    @api.model
-    def get_project_sprint_dashboard_data(
-        self,
-        project_id=False,
-        sprint_filter="all",
-        limit=20,
-    ):
-        """Return a selected sprint's task preview and the full task domain."""
-        Project = self.env["project.project"]
-        Task = self.env["project.task"]
-        project_id = self._dashboard_integer_id(project_id)
-        if not project_id:
-            return {"count": 0, "tasks": [], "domain": []}
-        project = Project.search([
-            ("id", "=", project_id),
-            ("active", "=", True),
-        ], limit=1)
-        if not project:
-            return {"count": 0, "tasks": [], "domain": []}
-
-        domain = [
-            ("project_id", "=", project.id),
-            ("active", "=", True),
-            *VISIBLE_TASK_DOMAIN,
-        ]
-        if sprint_filter == "none":
-            domain.append(("sprint_id", "=", False))
-        elif sprint_filter != "all":
-            sprint_id = self._dashboard_integer_id(sprint_filter)
-            sprint = self.env["project.sprint"].search([
-                ("id", "=", sprint_id or 0),
-                ("project_id", "=", project.id),
-            ], limit=1)
-            if not sprint:
-                return {"count": 0, "tasks": [], "domain": []}
-            domain.append(("sprint_id", "=", sprint.id))
-
-        try:
-            limit = min(100, max(1, int(limit)))
-        except (TypeError, ValueError):
-            limit = 20
-        count = Task.search_count(domain)
-        tasks = Task.search(
-            domain,
-            order="sprint_sequence_order, hierarchical_priority_order, sequence, name, id",
-            limit=limit,
-        )
-        state_labels = dict(
-            Task._fields["state"]._description_selection(self.env)
-        )
-        return {
-            "count": count,
-            "domain": domain,
-            "tasks": [{
-                "id": task.id,
-                "name": task.display_name,
-                "state": task.state,
-                "state_label": state_labels.get(task.state, task.state),
-                "sprint_name": task.sprint_id.display_name or _("Sin Sprint"),
-                "hierarchical_priority": task.hierarchical_priority,
-            } for task in tasks],
+            "risks": {
+                "count": blocked_count,
+                "items": risks,
+                "model": "project.task",
+                "domain": blocked_domain,
+            },
         }
 
     @api.model

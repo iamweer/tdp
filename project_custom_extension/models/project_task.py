@@ -4,26 +4,34 @@ import unicodedata
 from lxml import etree
 
 from odoo import _, api, fields, models
-from odoo.exceptions import AccessError, ValidationError
+from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tools import float_compare, float_repr
 
 RESOLVED_STAGE_NAME_PATTERN = re.compile(r"^resuelt[oa]s?$")
 
 
-def is_resolved_stage_name(name):
-    """Indica si el nombre de etapa es una variante de "Resuelto".
+def normalize_stage_name(name):
+    """Normaliza un nombre de etapa para compararlo.
 
-    Ignora mayúsculas, tildes, espacios y signos de puntuación en los
-    extremos, y acepta género y número (Resuelto, RESUELTA, resueltos...).
+    Ignora mayúsculas, tildes, espacios repetidos y signos de puntuación en
+    los extremos: "  Validación Cliente." -> "validacion cliente".
     """
     if not name:
-        return False
+        return ""
     normalized = unicodedata.normalize("NFKD", name)
     normalized = "".join(
         char for char in normalized if not unicodedata.combining(char)
     )
-    normalized = re.sub(r"^\W+|\W+$", "", normalized.casefold())
-    return bool(RESOLVED_STAGE_NAME_PATTERN.match(normalized))
+    normalized = re.sub(r"\s+", " ", normalized.casefold())
+    return re.sub(r"^\W+|\W+$", "", normalized)
+
+
+def is_resolved_stage_name(name):
+    """Indica si el nombre de etapa es una variante de "Resuelto".
+
+    Acepta género y número (Resuelto, RESUELTA, resueltos...).
+    """
+    return bool(RESOLVED_STAGE_NAME_PATTERN.match(normalize_stage_name(name)))
 
 
 class ProjectTask(models.Model):
@@ -34,11 +42,17 @@ class ProjectTask(models.Model):
         "description",
         "priority",
         "stage_id",
+        "unified_stage_id",
         "state",
         "planned_date_begin",
         "date_deadline",
         "allocated_hours",
         "tag_ids",
+    })
+    # Written by Odoo itself after a client change (e.g. a state change
+    # updates the last stage date); never shown as editable to clients.
+    CLIENT_SYSTEM_FIELDS = frozenset({
+        "date_last_stage_update",
     })
     CLIENT_HIDDEN_VIEW_ELEMENTS = (
         ".//page[@name='sub_tasks_page']",
@@ -148,6 +162,14 @@ class ProjectTask(models.Model):
             default_project_id = self.env.context.get("default_project_id")
             for values in vals_list:
                 self._check_project_user_task_links(values, default_project_id)
+        for values in vals_list:
+            if values.get("parent_id"):
+                # Dates sent explicitly, even empty, are kept as they are.
+                parent = self.browse(values["parent_id"])
+                for name, value in self._get_subtask_default_dates(
+                    parent, values.get("date_deadline"),
+                ).items():
+                    values.setdefault(name, value)
         tasks = super().create(vals_list)
         resolved_tasks = tasks.filtered(
             lambda task: is_resolved_stage_name(task.stage_id.name)
@@ -189,7 +211,9 @@ class ProjectTask(models.Model):
             raise AccessError(_("No tiene permiso para modificar tareas."))
 
         if is_client:
-            forbidden_fields = set(vals) - self.CLIENT_WRITABLE_FIELDS
+            forbidden_fields = (
+                set(vals) - self.CLIENT_WRITABLE_FIELDS - self.CLIENT_SYSTEM_FIELDS
+            )
             if forbidden_fields:
                 raise AccessError(
                     _("No tiene permiso para modificar la asignación o estructura de la tarea.")
@@ -208,6 +232,37 @@ class ProjectTask(models.Model):
             self._check_project_user_task_links(vals)
         return self._write_with_resolved_stage_sync(vals)
 
+    @api.model
+    def default_get(self, fields_list):
+        values = super().default_get(fields_list)
+        parent_id = values.get("parent_id") or self.env.context.get(
+            "default_parent_id"
+        )
+        if parent_id:
+            parent = self.browse(parent_id).exists()
+            for name, value in self._get_subtask_default_dates(
+                parent, values.get("date_deadline"),
+            ).items():
+                if name in fields_list and not values.get(name):
+                    values[name] = value
+        return values
+
+    @api.model
+    def _get_subtask_default_dates(self, parent, deadline=False):
+        """Start a subtask now and end it with its parent, if still ahead.
+
+        ``deadline`` is the end date already chosen for the subtask: the start
+        is not proposed when it would fall after it.
+        """
+        now = fields.Datetime.now()
+        values = {}
+        if not deadline and parent and parent.date_deadline and parent.date_deadline > now:
+            values["date_deadline"] = parent.date_deadline
+        end = fields.Datetime.to_datetime(deadline) or values.get("date_deadline")
+        if not end or end >= now:
+            values["planned_date_begin"] = now
+        return values
+
     def unlink(self):
         if not self.env.su and (
             self.env.user.has_group("project_custom_extension.group_project_client")
@@ -219,6 +274,17 @@ class ProjectTask(models.Model):
     planned_date_begin = fields.Datetime(
         string="Fecha inicial",
         tracking=True,
+    )
+    unified_stage_id = fields.Many2one(
+        "project.task.unified.stage",
+        string="Etapa unificada",
+        compute="_compute_unified_stage_id",
+        inverse="_inverse_unified_stage_id",
+        store=True,
+        index=True,
+        group_expand="_read_group_unified_stage_ids",
+        help="Etapa común a todos los proyectos. Al cambiarla, la tarea pasa "
+        "a la etapa equivalente de su proyecto.",
     )
     hierarchical_priority = fields.Integer(
         string="Prioridad jerárquica",
@@ -271,6 +337,43 @@ class ProjectTask(models.Model):
         "para el avance ni los reportes del proyecto. Las subtareas heredan "
         "esta marca.",
     )
+
+    @api.depends("stage_id.unified_stage_id")
+    def _compute_unified_stage_id(self):
+        for task in self:
+            task.unified_stage_id = task.stage_id.unified_stage_id
+
+    def _inverse_unified_stage_id(self):
+        for task in self:
+            unified_stage = task.unified_stage_id
+            if task.stage_id.unified_stage_id == unified_stage:
+                continue
+            if not unified_stage:
+                raise UserError(_(
+                    "Las tareas no se pueden mover a la columna sin etapa "
+                    "unificada: elija una etapa unificada."
+                ))
+            if not task.project_id:
+                raise UserError(_(
+                    "La tarea %(task)s no tiene proyecto, así que no tiene "
+                    "etapas a las que moverla.",
+                    task=task.display_name,
+                ))
+            stage = task.project_id.type_ids.filtered(
+                lambda project_stage: project_stage.unified_stage_id == unified_stage
+            )[:1]
+            if not stage:
+                raise UserError(_(
+                    "El proyecto %(project)s no tiene una etapa equivalente a "
+                    "\"%(stage)s\". Asígnela en la configuración de etapas.",
+                    project=task.project_id.display_name,
+                    stage=unified_stage.name,
+                ))
+            task.stage_id = stage
+
+    @api.model
+    def _read_group_unified_stage_ids(self, stages, domain):
+        return stages.search([])
 
     @api.depends("parent_id.is_internal_task")
     def _compute_is_internal_task(self):

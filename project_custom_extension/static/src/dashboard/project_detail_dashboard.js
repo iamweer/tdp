@@ -9,14 +9,24 @@ import { session } from "@web/session";
 import { Many2XAutocomplete } from "@web/views/fields/relational_utils";
 
 
-const STATE_COLORS = {
-    "1_done": "#269b3b",
-    "01_in_progress": "#0756bb",
-    "02_changes_requested": "#f0a400",
-    "03_approved": "#43a047",
-    "04_waiting_normal": "#e63138",
-    "1_canceled": "#98a1b2",
+const WORKLOAD_COLORS = ["teal", "indigo", "amber", "navy", "lilac"];
+
+const SCHEDULE_TONES = {
+    on_time: "green",
+    attention: "amber",
+    late: "red",
+    unplanned: "muted",
 };
+
+function emptyFilters() {
+    return {
+        customer: false,
+        manager: false,
+        project: false,
+        phaseId: "",
+        cutoff: "",
+    };
+}
 
 
 export class ProjectDetailDashboard extends Component {
@@ -30,13 +40,11 @@ export class ProjectDetailDashboard extends Component {
         this.orm = useService("orm");
         this.state = useState({
             customerIds: [],
-            selectedCustomer: false,
-            selectedProject: false,
+            managerIds: [],
+            draft: emptyFilters(),
+            applied: emptyFilters(),
             data: false,
-            activityScope: "all",
-            sprintFilter: "all",
-            sprintData: false,
-            sprintError: false,
+            noProject: false,
             loading: false,
             error: false,
         });
@@ -46,149 +54,92 @@ export class ProjectDetailDashboard extends Component {
             write: false,
         };
         this.requestSequence = 0;
-        this.sprintRequestSequence = 0;
-        onWillStart(() => this.loadFilters());
-    }
-
-    get customerValue() {
-        return this.state.selectedCustomer?.display_name || "";
+        onWillStart(() => this.loadFilters(this.getStoredFilters()));
     }
 
     get storageKey() {
-        return `project_custom_extension.project_detail_dashboard.filters.${session.db}.${session.uid}`;
-    }
-
-    get projectValue() {
-        return this.state.selectedProject?.display_name || "";
-    }
-
-    get hasSelectedCustomer() {
-        return Boolean(this.state.selectedCustomer);
-    }
-
-    get hasSelectedProject() {
-        return Boolean(this.state.selectedProject);
+        return `project_custom_extension.project_detail_dashboard.v2.filters.${session.db}.${session.uid}`;
     }
 
     get project() {
         return this.state.data?.project || false;
     }
 
-    get progressMetrics() {
-        return this.state.data?.progress?.metrics || [];
+    get kpis() {
+        return this.state.data?.kpis || {};
     }
 
-    get parentProgress() {
-        return this.state.data?.progress?.parent_tasks || [];
+    get draftPhases() {
+        // Phases are only known for the loaded project.
+        return this.state.draft.project?.id === this.project?.id
+            ? this.state.data?.filters?.phases || []
+            : [];
     }
 
-    get activityStates() {
-        const states = this.state.data?.activity_states_by_scope?.[
-            this.state.activityScope
-        ] || this.state.data?.activities_by_state || [];
-        const total = states.reduce((sum, state) => sum + state.count, 0);
-        return states.map((state, index) => ({
-            ...state,
-            color: STATE_COLORS[state.key] || this.getFallbackColor(index),
-            percentage: total ? Math.round((state.count * 100) / total) : 0,
+    get scheduleTone() {
+        return SCHEDULE_TONES[this.kpis.schedule?.key] || "muted";
+    }
+
+    get milestonePercentage() {
+        const milestones = this.kpis.milestones;
+        return milestones?.total
+            ? Math.round((milestones.done * 100) / milestones.total)
+            : 0;
+    }
+
+    get milestoneChartStyle() {
+        const chart = this.state.data?.milestone_chart;
+        const total = (chart?.done || 0) + (chart?.pending || 0);
+        if (!total) {
+            return "background: var(--project-detail-track);";
+        }
+        const done = (chart.done * 100) / total;
+        return `background: conic-gradient(var(--project-detail-teal) 0 ${done}%, var(--project-detail-track) ${done}% 100%);`;
+    }
+
+    get workload() {
+        const items = this.state.data?.workload || [];
+        const max = Math.max(1, ...items.map((item) => item.count));
+        return items.map((item, index) => ({
+            ...item,
+            color: item.key === "unassigned"
+                ? "muted"
+                : WORKLOAD_COLORS[index % WORKLOAD_COLORS.length],
+            width: Math.round((item.count * 100) / max),
         }));
     }
 
-    get activityStateTotal() {
-        return this.activityStates.reduce((sum, state) => sum + state.count, 0);
-    }
-
-    get activityTotalMetric() {
-        const projectId = this.project?.id;
-        if (!projectId) {
-            return false;
+    getPhaseTone(percentage) {
+        if (percentage >= 100) {
+            return "teal";
         }
-        const scopeDomain = this.state.activityScope === "main"
-            ? [["parent_id", "=", false]]
-            : this.state.activityScope === "subtasks"
-                ? [["parent_id", "!=", false]]
-                : [];
-        return {
-            title: _t("Actividades del proyecto"),
-            model: "project.task",
-            domain: [
-                ["project_id", "=", projectId],
-                ["active", "=", true],
-                ...scopeDomain,
-            ],
-        };
-    }
-
-    get sprintSummary() {
-        const sprints = this.state.data?.sprints || [];
-        if (this.state.sprintFilter === "all") {
-            const summary = { total: 0, states: new Map() };
-            for (const sprint of sprints) {
-                summary.total += sprint.total || 0;
-                for (const state of sprint.states || []) {
-                    const stateSummary = summary.states.get(state.key) || {
-                        key: state.key,
-                        label: state.label,
-                        count: 0,
-                    };
-                    stateSummary.count += state.count;
-                    summary.states.set(state.key, stateSummary);
-                }
-            }
-            return { total: summary.total, states: [...summary.states.values()] };
+        if (percentage >= 70) {
+            return "indigo";
         }
-        const sprint = sprints.find(
-            (item) => String(item.id || "none") === this.state.sprintFilter
-        );
-        return sprint
-            ? { total: sprint.total || 0, states: sprint.states || [] }
-            : { total: 0, states: [] };
+        return percentage >= 40 ? "amber" : "red";
     }
 
-    get sprintTasks() {
-        return this.state.sprintData?.tasks || [];
-    }
-
-    get sprintTaskCount() {
-        return this.state.sprintData?.count || 0;
-    }
-
-    get activityChartStyle() {
-        if (!this.activityStates.length) {
-            return "background: #e8ecf2;";
-        }
-        let start = 0;
-        const segments = this.activityStates.map((state) => {
-            const end = start + (state.count * 100) / this.activityStateTotal;
-            const segment = `${state.color} ${start}% ${end}%`;
-            start = end;
-            return segment;
-        });
-        return `background: conic-gradient(${segments.join(", ")});`;
-    }
-
-    get progressRingStyle() {
-        const percentage = Math.max(
-            0,
-            Math.min(100, this.state.data?.progress?.percentage || 0)
-        );
-        return `background: conic-gradient(var(--project-detail-blue) ${percentage}%, #e8ecf2 0);`;
+    getBarStyle(percentage) {
+        return `width: ${Math.min(100, Math.max(0, percentage || 0))}%;`;
     }
 
     getCustomerDomain() {
         return [["id", "in", this.state.customerIds]];
     }
 
-    getProjectDomain() {
-        const domain = [["active", "=", true]];
-        if (this.state.selectedCustomer) {
-            domain.push(["partner_id", "=", this.state.selectedCustomer.id]);
-        }
-        return domain;
+    getManagerDomain() {
+        return [["id", "in", this.state.managerIds]];
     }
 
-    getFallbackColor(index) {
-        return ["#126bd0", "#7e57c2", "#78909c"][index % 3];
+    getProjectDomain() {
+        const domain = [["active", "=", true]];
+        if (this.state.draft.customer) {
+            domain.push(["partner_id", "=", this.state.draft.customer.id]);
+        }
+        if (this.state.draft.manager) {
+            domain.push(["user_id", "=", this.state.draft.manager.id]);
+        }
+        return domain;
     }
 
     formatDate(value) {
@@ -204,158 +155,91 @@ export class ProjectDetailDashboard extends Component {
     }
 
     getStoredFilters() {
-        const storedValue = browser.localStorage.getItem(this.storageKey);
-        if (!storedValue) {
-            return { customerId: false, projectId: false };
-        }
         try {
-            const filters = JSON.parse(storedValue);
-            const customerId = Number.parseInt(filters.customer_id, 10);
-            const projectId = Number.parseInt(filters.project_id, 10);
+            const filters = JSON.parse(
+                browser.localStorage.getItem(this.storageKey) || "{}"
+            );
+            const toId = (value) => {
+                const id = Number.parseInt(value, 10);
+                return Number.isInteger(id) && id > 0 ? id : false;
+            };
             return {
-                customerId: Number.isInteger(customerId) && customerId > 0
-                    ? customerId
-                    : false,
-                projectId: Number.isInteger(projectId) && projectId > 0
-                    ? projectId
-                    : false,
+                customerId: toId(filters.customer_id),
+                managerId: toId(filters.manager_id),
+                projectId: toId(filters.project_id),
+                phaseId: toId(filters.phase_id) ? String(toId(filters.phase_id)) : "",
+                cutoff: /^\d{4}-\d{2}$/.test(filters.cutoff || "") ? filters.cutoff : "",
             };
         } catch {
-            return { customerId: false, projectId: false };
+            return {
+                customerId: false,
+                managerId: false,
+                projectId: false,
+                phaseId: "",
+                cutoff: "",
+            };
         }
     }
 
-    storeFilters(customerId = false, projectId = false) {
-        if (customerId || projectId) {
+    storeFilters(filters) {
+        try {
             browser.localStorage.setItem(
                 this.storageKey,
                 JSON.stringify({
-                    customer_id: customerId || false,
-                    project_id: projectId || false,
+                    customer_id: filters.customer?.id || false,
+                    manager_id: filters.manager?.id || false,
+                    project_id: filters.project?.id || false,
+                    phase_id: filters.phaseId || false,
+                    cutoff: filters.cutoff || "",
                 })
             );
-        } else {
-            browser.localStorage.removeItem(this.storageKey);
+        } catch {
+            // Storage is only a convenience.
         }
     }
 
-    async loadFilters() {
-        this.state.loading = true;
-        this.state.error = false;
-        const storedFilters = this.getStoredFilters();
-        try {
-            const data = await this.orm.call(
-                "project.project",
-                "get_project_detail_dashboard_filters",
-                [],
-                {
-                    partner_id: storedFilters.customerId || false,
-                    project_id: storedFilters.projectId || false,
-                }
-            );
-            this.state.customerIds = data.customer_ids || [];
-            this.state.selectedCustomer = data.selected_customer || false;
-            this.state.selectedProject = data.selected_project || false;
-            this.storeFilters(
-                this.state.selectedCustomer?.id || false,
-                this.state.selectedProject?.id || false
-            );
-            if (this.state.selectedProject) {
-                await this.loadProjectData(
-                    this.state.selectedProject.id,
-                    this.state.selectedCustomer?.id || false
-                );
-            }
-        } catch (error) {
-            this.state.error = true;
-            this.notification.add(
-                _t("No fue posible cargar los filtros del dashboard."),
-                { type: "danger" }
-            );
-        } finally {
-            this.state.loading = false;
-        }
-    }
-
-    async retryDashboard() {
-        if (this.state.selectedProject) {
-            await this.loadProjectData(
-                this.state.selectedProject.id,
-                this.state.selectedCustomer?.id || false
-            );
-            return;
-        }
-        await this.loadFilters();
-    }
-
-    clearProject() {
-        this.requestSequence += 1;
-        this.sprintRequestSequence += 1;
-        this.state.selectedProject = false;
-        this.state.data = false;
-        this.state.sprintData = false;
-        this.state.error = false;
-        this.state.loading = false;
-        this.storeFilters(this.state.selectedCustomer?.id || false, false);
-    }
-
-    onCustomerUpdate(records) {
-        this.state.selectedCustomer = records?.[0] || false;
-        this.storeFilters(this.state.selectedCustomer?.id || false, false);
-        this.clearProject();
-    }
-
-    async onProjectUpdate(records) {
-        this.sprintRequestSequence += 1;
-        this.state.selectedProject = records?.[0] || false;
-        this.storeFilters(
-            this.state.selectedCustomer?.id || false,
-            this.state.selectedProject?.id || false
-        );
-        this.state.data = false;
-        this.state.sprintData = false;
-        this.state.activityScope = "all";
-        this.state.sprintFilter = "all";
-        this.state.error = false;
-        if (!this.state.selectedProject) {
-            this.requestSequence += 1;
-            this.state.loading = false;
-            return;
-        }
-        await this.loadProjectData(
-            this.state.selectedProject.id,
-            this.state.selectedCustomer?.id || false
-        );
-    }
-
-    async loadProjectData(projectId, partnerId = false) {
+    /**
+     * Validate the filters on the server, which always returns a project
+     * when one matches, and load its dashboard.
+     */
+    async loadFilters({ customerId, managerId, projectId, phaseId, cutoff }) {
         const requestSequence = ++this.requestSequence;
         this.state.loading = true;
         this.state.error = false;
         try {
             const data = await this.orm.call(
                 "project.project",
-                "get_project_detail_dashboard_data",
+                "get_project_detail_dashboard_filters",
                 [],
                 {
-                    project_id: projectId,
-                    partner_id: partnerId || false,
+                    partner_id: customerId || false,
+                    project_id: projectId || false,
+                    manager_id: managerId || false,
                 }
             );
             if (requestSequence !== this.requestSequence) {
                 return;
             }
-            if (data.project) {
-                this.state.data = data;
-                this.state.activityScope = "all";
-                this.state.sprintFilter = "all";
-                await this.loadSprintData(projectId, "all");
-            } else {
-                this.state.selectedProject = false;
+            this.state.customerIds = data.customer_ids || [];
+            this.state.managerIds = data.manager_ids || [];
+            const project = data.selected_project || false;
+            const applied = {
+                customer: data.selected_customer || false,
+                manager: data.selected_manager || false,
+                project,
+                phaseId: project && project.id === projectId ? phaseId || "" : "",
+                cutoff: cutoff || "",
+            };
+            this.state.applied = applied;
+            this.state.draft = { ...applied };
+            this.storeFilters(applied);
+            if (!project) {
                 this.state.data = false;
-                this.storeFilters(this.state.selectedCustomer?.id || false, false);
+                this.state.noProject = true;
+                return;
             }
-        } catch (error) {
+            await this.loadProjectData(applied, requestSequence);
+        } catch {
             if (requestSequence !== this.requestSequence) {
                 return;
             }
@@ -371,55 +255,107 @@ export class ProjectDetailDashboard extends Component {
         }
     }
 
-    onActivityScopeChange(event) {
-        this.state.activityScope = event.target.value;
-    }
-
-    async onSprintFilterChange(event) {
-        this.state.sprintFilter = event.target.value;
-        if (this.project) {
-            await this.loadSprintData(this.project.id, this.state.sprintFilter);
-        }
-    }
-
-    async loadSprintData(projectId, sprintFilter) {
-        const requestSequence = ++this.sprintRequestSequence;
-        this.state.sprintError = false;
-        try {
-            const data = await this.orm.call(
-                "project.project",
-                "get_project_sprint_dashboard_data",
-                [],
-                { project_id: projectId, sprint_filter: sprintFilter, limit: 20 }
-            );
-            if (requestSequence !== this.sprintRequestSequence) {
-                return;
+    async loadProjectData(filters, requestSequence) {
+        const data = await this.orm.call(
+            "project.project",
+            "get_project_detail_dashboard_data",
+            [],
+            {
+                project_id: filters.project.id,
+                partner_id: filters.customer?.id || false,
+                manager_id: filters.manager?.id || false,
+                phase_id: filters.phaseId ? Number(filters.phaseId) : false,
+                cutoff: filters.cutoff || false,
             }
-            this.state.sprintData = {
-                count: data.count || 0,
-                tasks: data.tasks || [],
-                domain: data.domain || [],
-            };
-        } catch {
-            if (requestSequence === this.sprintRequestSequence) {
-                this.state.sprintError = true;
-                this.state.sprintData = { count: 0, tasks: [], domain: [] };
-            }
+        );
+        if (requestSequence !== this.requestSequence) {
+            return;
         }
+        if (!data.project && filters.phaseId) {
+            // The stored phase no longer exists: show the whole project.
+            filters.phaseId = "";
+            this.state.draft.phaseId = "";
+            this.storeFilters(filters);
+            return this.loadProjectData(filters, requestSequence);
+        }
+        this.state.data = data.project ? data : false;
+        this.state.noProject = !data.project;
     }
 
-    openMetric(metric) {
-        if (!metric?.model || !metric?.domain) {
+    filtersFrom(filters) {
+        return {
+            customerId: filters.customer?.id || false,
+            managerId: filters.manager?.id || false,
+            projectId: filters.project?.id || false,
+            phaseId: filters.phaseId,
+            cutoff: filters.cutoff,
+        };
+    }
+
+    applyFilters() {
+        return this.loadFilters(this.filtersFrom(this.state.draft));
+    }
+
+    clearFilters() {
+        // The project is kept: the dashboard always has one.
+        return this.loadFilters({
+            ...this.filtersFrom(emptyFilters()),
+            projectId: this.state.applied.project?.id || false,
+        });
+    }
+
+    retryDashboard() {
+        return this.loadFilters(this.filtersFrom(this.state.applied));
+    }
+
+    // Every filter reloads the dashboard as soon as it changes.
+    onCustomerUpdate(records) {
+        this.state.draft.customer = records?.[0] || false;
+        this.state.draft.project = false;
+        this.state.draft.phaseId = "";
+        return this.applyFilters();
+    }
+
+    onManagerUpdate(records) {
+        this.state.draft.manager = records?.[0] || false;
+        this.state.draft.project = false;
+        this.state.draft.phaseId = "";
+        return this.applyFilters();
+    }
+
+    onProjectUpdate(records) {
+        // Clearing the field keeps the current project: there is always one.
+        this.state.draft.project = records?.[0] || this.state.applied.project;
+        this.state.draft.phaseId = "";
+        return this.applyFilters();
+    }
+
+    onPhaseChange(event) {
+        this.state.draft.phaseId = event.target.value;
+        return this.applyFilters();
+    }
+
+    onCutoffChange(event) {
+        this.state.draft.cutoff = event.target.value;
+        return this.applyFilters();
+    }
+
+    openMetric(metric, title) {
+        if (!metric?.domain) {
             return;
         }
         return this.action.doAction({
             type: "ir.actions.act_window",
-            name: metric.title,
-            res_model: metric.model,
-            views: [[false, "kanban"], [false, "list"], [false, "form"]],
+            name: title || metric.name || this.project.name,
+            res_model: "project.task",
+            views: [[false, "list"], [false, "kanban"], [false, "form"]],
             domain: metric.domain,
             context: { active_test: true },
         });
+    }
+
+    openDomain(domain, title) {
+        return this.openMetric({ domain }, title);
     }
 
     openProjectTasks() {
@@ -449,17 +385,6 @@ export class ProjectDetailDashboard extends Component {
             tag: "project_custom_extension.ProjectGantt",
             target: "current",
             context: { project_id: this.project.id },
-        });
-    }
-
-    openAllSprintTasks() {
-        if (!this.project || !this.state.sprintData?.domain) {
-            return;
-        }
-        return this.openMetric({
-            title: _t("Actividades del Sprint"),
-            model: "project.task",
-            domain: this.state.sprintData.domain,
         });
     }
 

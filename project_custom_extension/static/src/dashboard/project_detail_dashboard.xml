@@ -5,60 +5,95 @@
             <div class="o_project_detail_dashboard_container">
                 <header class="o_project_detail_dashboard_header">
                     <div class="o_project_detail_dashboard_heading">
-                        <p class="o_project_detail_dashboard_eyebrow">Seguimiento individual</p>
-                        <h1>Dashboard de Proyecto</h1>
+                        <h1>Seguimiento ejecutivo de proyectos</h1>
+                        <p t-if="project">
+                            <t t-out="project.name"/> · <t t-out="project.customer_name"/>
+                        </p>
+                        <p t-else="">Visión clara para tomar mejores decisiones</p>
                     </div>
-                    <div class="o_project_detail_dashboard_toolbar">
-                        <div class="o_project_detail_dashboard_filter">
-                            <label for="project_detail_customer">Cliente</label>
-                            <div class="o_project_detail_dashboard_control">
-                                <Many2XAutocomplete
-                                    id="'project_detail_customer'"
-                                    value="customerValue"
-                                    resModel="'res.partner'"
-                                    fieldString="'Cliente'"
-                                    placeholder="'Todos los clientes'"
-                                    activeActions="activeActions"
-                                    getDomain.bind="getCustomerDomain"
-                                    update.bind="onCustomerUpdate"
-                                    searchLimit="10"
-                                />
-                                <button t-if="hasSelectedCustomer"
-                                        type="button"
-                                        class="btn btn-link o_project_detail_dashboard_clear"
-                                        t-on-click="() => this.onCustomerUpdate([])"
-                                        title="Mostrar todos los clientes"
-                                        aria-label="Mostrar todos los clientes">
-                                    <i class="fa fa-times" aria-hidden="true"/>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="o_project_detail_dashboard_filter">
-                            <label for="project_detail_project">Proyecto</label>
-                            <div class="o_project_detail_dashboard_control">
-                                <Many2XAutocomplete
-                                    id="'project_detail_project'"
-                                    value="projectValue"
-                                    resModel="'project.project'"
-                                    fieldString="'Proyecto'"
-                                    placeholder="'Selecciona un proyecto'"
-                                    activeActions="activeActions"
-                                    getDomain.bind="getProjectDomain"
-                                    update.bind="onProjectUpdate"
-                                    searchLimit="15"
-                                />
-                                <button t-if="hasSelectedProject"
-                                        type="button"
-                                        class="btn btn-link o_project_detail_dashboard_clear"
-                                        t-on-click="clearProject"
-                                        title="Limpiar proyecto"
-                                        aria-label="Limpiar proyecto">
-                                    <i class="fa fa-times" aria-hidden="true"/>
-                                </button>
-                            </div>
-                        </div>
+                    <div t-if="project" class="o_project_detail_dashboard_header_actions">
+                        <button type="button" class="btn btn-light" t-on-click="openProjectTasks">
+                            <i class="fa fa-external-link me-1" aria-hidden="true"/>Abrir proyecto
+                        </button>
+                        <button type="button" class="btn btn-light" t-on-click="openProjectGantt">
+                            <i class="fa fa-calendar me-1" aria-hidden="true"/>Cronograma
+                        </button>
                     </div>
                 </header>
+
+                <section class="o_project_detail_dashboard_card o_project_detail_dashboard_filters" aria-label="Filtros">
+                    <div class="o_project_detail_dashboard_filter">
+                        <label for="project_detail_customer">Cliente</label>
+                        <Many2XAutocomplete
+                            id="'project_detail_customer'"
+                            value="state.draft.customer ? state.draft.customer.display_name : ''"
+                            resModel="'res.partner'"
+                            fieldString="'Cliente'"
+                            placeholder="'Todos'"
+                            activeActions="activeActions"
+                            getDomain.bind="getCustomerDomain"
+                            update.bind="onCustomerUpdate"
+                            searchLimit="10"
+                        />
+                    </div>
+                    <div class="o_project_detail_dashboard_filter">
+                        <label for="project_detail_project">Proyecto</label>
+                        <Many2XAutocomplete
+                            id="'project_detail_project'"
+                            value="state.draft.project ? state.draft.project.display_name : ''"
+                            resModel="'project.project'"
+                            fieldString="'Proyecto'"
+                            placeholder="'Selecciona un proyecto'"
+                            activeActions="activeActions"
+                            getDomain.bind="getProjectDomain"
+                            update.bind="onProjectUpdate"
+                            searchLimit="15"
+                        />
+                    </div>
+                    <div class="o_project_detail_dashboard_filter">
+                        <label for="project_detail_manager">Gerente</label>
+                        <Many2XAutocomplete
+                            id="'project_detail_manager'"
+                            value="state.draft.manager ? state.draft.manager.display_name : ''"
+                            resModel="'res.users'"
+                            fieldString="'Gerente'"
+                            placeholder="'Todos'"
+                            activeActions="activeActions"
+                            getDomain.bind="getManagerDomain"
+                            update.bind="onManagerUpdate"
+                            searchLimit="10"
+                        />
+                    </div>
+                    <div class="o_project_detail_dashboard_filter">
+                        <label for="project_detail_phase">Etapa</label>
+                        <select id="project_detail_phase"
+                                class="form-select"
+                                t-att-disabled="!draftPhases.length"
+                                t-on-change="onPhaseChange">
+                            <option value="" t-att-selected="!state.draft.phaseId">Todas</option>
+                            <option t-foreach="draftPhases"
+                                    t-as="phase"
+                                    t-key="phase.id"
+                                    t-att-value="phase.id"
+                                    t-att-selected="phase.id == state.draft.phaseId"
+                                    t-out="phase.name"/>
+                        </select>
+                    </div>
+                    <div class="o_project_detail_dashboard_filter">
+                        <label for="project_detail_cutoff">Período de corte</label>
+                        <input id="project_detail_cutoff"
+                               type="month"
+                               class="form-control"
+                               t-att-value="state.draft.cutoff"
+                               t-on-change="onCutoffChange"/>
+                    </div>
+                    <div class="o_project_detail_dashboard_filter_actions">
+                        <button type="button"
+                                class="btn btn-link o_project_detail_dashboard_clear"
+                                t-att-disabled="state.loading"
+                                t-on-click="clearFilters">Limpiar filtros</button>
+                    </div>
+                </section>
 
                 <div t-if="state.error" class="o_project_detail_dashboard_feedback" role="alert">
                     <i class="fa fa-exclamation-circle" aria-hidden="true"/>
@@ -71,281 +106,253 @@
                     </button>
                 </div>
 
-                <div t-elif="state.loading" class="o_project_detail_dashboard_loading" aria-live="polite">
+                <div t-elif="state.loading and !state.data" class="o_project_detail_dashboard_loading" aria-live="polite">
                     <i class="fa fa-spinner fa-spin" aria-hidden="true"/>
                     <span>Cargando información del proyecto…</span>
                 </div>
 
-                <main t-elif="state.data" class="o_project_detail_dashboard_content" aria-live="polite">
-                    <div class="o_project_detail_dashboard_grid">
-                        <section class="o_project_detail_dashboard_panel o_project_detail_dashboard_overview">
-                            <header class="o_project_detail_dashboard_panel_header">
-                                <div>
-                                    <i class="fa fa-building-o" aria-hidden="true"/>
-                                    <h2>Seguimiento del Proyecto</h2>
-                                </div>
-                                <span t-attf-class="o_project_detail_dashboard_status o_project_detail_dashboard_status--#{project.status}"
-                                      t-out="project.status_label"/>
-                                <button type="button"
-                                        class="o_project_detail_dashboard_open_project"
-                                        t-on-click="openProjectTasks">
-                                    <i class="fa fa-external-link" aria-hidden="true"/>
-                                    Abrir proyecto
-                                </button>
-                                <button type="button"
-                                        class="o_project_detail_dashboard_open_project o_project_detail_dashboard_open_gantt"
-                                        t-on-click="openProjectGantt">
-                                    <i class="fa fa-calendar" aria-hidden="true"/>
-                                    Cronograma
-                                </button>
-                            </header>
-                            <div class="o_project_detail_dashboard_overview_body">
-                                <div class="o_project_detail_dashboard_project_identity">
-                                    <span>Proyecto seleccionado</span>
-                                    <h3 t-out="project.name"/>
-                                </div>
-                                <div class="o_project_detail_dashboard_facts">
-                                    <div>
-                                        <span>Cliente</span>
-                                        <strong t-out="project.customer_name"/>
-                                    </div>
-                                    <div>
-                                        <span>Responsable</span>
-                                        <strong t-out="project.responsible_name"/>
-                                    </div>
-                                    <div>
-                                        <span>Fecha de inicio</span>
-                                        <strong t-out="formatDate(project.start_date)"/>
-                                    </div>
-                                    <div>
-                                        <span>Fecha estimada de fin</span>
-                                        <strong t-out="formatDate(project.end_date)"/>
-                                    </div>
-                                </div>
-                            </div>
-                        </section>
+                <main t-elif="state.data"
+                      t-attf-class="o_project_detail_dashboard_content #{state.loading ? 'o_project_detail_dashboard_content--loading' : ''}"
+                      aria-live="polite">
+                    <div class="o_project_detail_dashboard_kpis">
+                        <button type="button"
+                                class="o_project_detail_dashboard_card o_project_detail_dashboard_kpi o_project_detail_dashboard_kpi--progress"
+                                t-on-click="() => this.openMetric(kpis.progress, 'Tareas del avance')">
+                            <span class="o_project_detail_dashboard_kpi_icon"><i class="fa fa-bar-chart" aria-hidden="true"/></span>
+                            <span class="o_project_detail_dashboard_kpi_body">
+                                <span class="o_project_detail_dashboard_kpi_title">Avance global</span>
+                                <strong t-if="kpis.progress.percentage !== false"><t t-out="formatPercentage(kpis.progress.percentage)"/>%</strong>
+                                <strong t-else="">—</strong>
+                            </span>
+                            <span class="o_project_detail_dashboard_track">
+                                <span class="o_project_detail_dashboard_bar o_project_detail_dashboard_bar--teal"
+                                      t-att-style="getBarStyle(kpis.progress.percentage)"/>
+                            </span>
+                            <small t-if="kpis.progress.percentage !== false">
+                                <t t-out="kpis.progress.completed"/> de <t t-out="kpis.progress.total"/> tareas completadas
+                            </small>
+                            <small t-else="">Sin pesos asignados a las fases</small>
+                        </button>
 
-                        <section class="o_project_detail_dashboard_panel o_project_detail_dashboard_progress">
+                        <div t-attf-class="o_project_detail_dashboard_card o_project_detail_dashboard_kpi o_project_detail_dashboard_kpi--tone-#{scheduleTone}">
+                            <span class="o_project_detail_dashboard_kpi_icon"><i class="fa fa-calendar" aria-hidden="true"/></span>
+                            <span class="o_project_detail_dashboard_kpi_body">
+                                <span class="o_project_detail_dashboard_kpi_title">Cronograma</span>
+                                <strong class="o_project_detail_dashboard_kpi_text" t-out="kpis.schedule.label"/>
+                            </span>
+                            <small t-out="kpis.schedule.detail"/>
+                        </div>
+
+                        <button type="button"
+                                class="o_project_detail_dashboard_card o_project_detail_dashboard_kpi o_project_detail_dashboard_kpi--accent o_project_detail_dashboard_kpi--tone-red"
+                                t-on-click="() => this.openMetric(kpis.overdue, 'Tareas vencidas')">
+                            <span class="o_project_detail_dashboard_kpi_icon"><i class="fa fa-exclamation-triangle" aria-hidden="true"/></span>
+                            <span class="o_project_detail_dashboard_kpi_body">
+                                <span class="o_project_detail_dashboard_kpi_title">Tareas vencidas</span>
+                                <strong t-out="kpis.overdue.count"/>
+                            </span>
+                            <small t-if="kpis.overdue.count">Requieren seguimiento</small>
+                            <small t-else="">Sin tareas vencidas</small>
+                        </button>
+
+                        <button type="button"
+                                class="o_project_detail_dashboard_card o_project_detail_dashboard_kpi o_project_detail_dashboard_kpi--accent o_project_detail_dashboard_kpi--tone-indigo"
+                                t-on-click="() => this.openMetric(kpis.milestones, 'Hitos')">
+                            <span class="o_project_detail_dashboard_kpi_icon"><i class="fa fa-flag" aria-hidden="true"/></span>
+                            <span class="o_project_detail_dashboard_kpi_body">
+                                <span class="o_project_detail_dashboard_kpi_title">Hitos cumplidos</span>
+                                <strong><t t-out="kpis.milestones.done"/>/<t t-out="kpis.milestones.total"/></strong>
+                            </span>
+                            <span class="o_project_detail_dashboard_track">
+                                <span class="o_project_detail_dashboard_bar o_project_detail_dashboard_bar--indigo"
+                                      t-att-style="getBarStyle(milestonePercentage)"/>
+                            </span>
+                            <small><t t-out="milestonePercentage"/>% de hitos completados</small>
+                        </button>
+
+                        <button type="button"
+                                class="o_project_detail_dashboard_card o_project_detail_dashboard_kpi o_project_detail_dashboard_kpi--accent o_project_detail_dashboard_kpi--tone-red"
+                                t-on-click="() => this.openMetric(kpis.blockers, 'Bloqueos abiertos')">
+                            <span class="o_project_detail_dashboard_kpi_icon"><i class="fa fa-lock" aria-hidden="true"/></span>
+                            <span class="o_project_detail_dashboard_kpi_body">
+                                <span class="o_project_detail_dashboard_kpi_title">Bloqueos abiertos</span>
+                                <strong t-out="kpis.blockers.count"/>
+                            </span>
+                            <small t-if="kpis.blockers.count">Requieren resolución</small>
+                            <small t-else="">Sin tareas bloqueadas</small>
+                        </button>
+                    </div>
+
+                    <div class="o_project_detail_dashboard_panels">
+                        <section class="o_project_detail_dashboard_card o_project_detail_dashboard_panel">
                             <header class="o_project_detail_dashboard_panel_header">
-                                <div>
-                                    <i class="fa fa-line-chart" aria-hidden="true"/>
-                                    <h2>Avance del Proyecto</h2>
-                                </div>
+                                <h2><i class="fa fa-tasks" aria-hidden="true"/>Avance por fase del proyecto</h2>
+                                <span>% de avance</span>
                             </header>
-                            <div t-if="state.data.progress.mode === 'parents'"
-                                 class="o_project_detail_dashboard_parent_progress_body">
-                                <div class="o_project_detail_dashboard_parent_progress_intro">
-                                    <strong>Avance ponderado por tarea principal</strong>
-                                    <span t-if="state.data.progress.percentage !== false">
-                                        Avance global: <t t-out="formatPercentage(state.data.progress.percentage)"/>%
-                                    </span>
-                                    <span t-else="">Sin pesos asignados</span>
-                                </div>
-                                <div class="o_project_detail_dashboard_parent_progress">
-                                    <button t-foreach="parentProgress"
-                                            t-as="parentTask"
-                                            t-key="parentTask.id"
-                                            type="button"
-                                            class="o_project_detail_dashboard_parent_progress_row"
-                                            t-on-click="() => this.openMetric(parentTask)">
-                                        <span class="o_project_detail_dashboard_parent_progress_name">
-                                            <strong t-out="parentTask.name"/>
-                                            <small>
-                                                <t t-out="parentTask.completed_subtasks"/>
-                                                /
-                                                <t t-out="parentTask.total_subtasks"/>
-                                                actividades finales · peso <t t-out="parentTask.weight_percentage"/>%
-                                            </small>
-                                        </span>
-                                        <span class="o_project_detail_dashboard_parent_progress_track">
-                                            <span class="o_project_detail_dashboard_parent_progress_bar"
-                                                  t-att-style="'width: ' + Math.min(100, Math.max(0, parentTask.percentage)) + '%'"/>
-                                        </span>
-                                        <strong class="o_project_detail_dashboard_parent_progress_value">
-                                            <t t-out="formatPercentage(parentTask.percentage)"/>%
-                                        </strong>
-                                    </button>
-                                </div>
-                            </div>
-                            <div t-else="" class="o_project_detail_dashboard_progress_body">
-                                <button t-if="progressMetrics.length"
+                            <div t-if="state.data.phase_progress.length" class="o_project_detail_dashboard_bars">
+                                <button t-foreach="state.data.phase_progress"
+                                        t-as="phase"
+                                        t-key="phase.id"
                                         type="button"
-                                        class="o_project_detail_dashboard_progress_ring"
-                                        t-att-style="progressRingStyle"
-                                        t-on-click="() => this.openMetric(progressMetrics[0])">
-                                    <div>
-                                        <strong t-if="state.data.progress.percentage !== false">
-                                            <t t-out="formatPercentage(state.data.progress.percentage)"/>%
-                                        </strong>
-                                        <strong t-else="">—</strong>
-                                        <span t-if="state.data.progress.percentage !== false">Ejecución</span>
-                                        <span t-else="">Sin pesos asignados</span>
-                                    </div>
+                                        t-attf-class="o_project_detail_dashboard_bar_row #{phase.selected ? 'o_project_detail_dashboard_bar_row--selected' : ''}"
+                                        t-att-title="phase.completed + ' de ' + phase.total + ' tareas · peso ' + phase.weight + '%'"
+                                        t-on-click="() => this.openMetric(phase)">
+                                    <span class="o_project_detail_dashboard_bar_label" t-out="phase.name"/>
+                                    <span class="o_project_detail_dashboard_track o_project_detail_dashboard_track--large">
+                                        <span t-attf-class="o_project_detail_dashboard_bar o_project_detail_dashboard_bar--#{getPhaseTone(phase.percentage)}"
+                                              t-att-style="getBarStyle(phase.percentage)"/>
+                                    </span>
+                                    <strong><t t-out="formatPercentage(phase.percentage)"/>%</strong>
                                 </button>
-                                <div class="o_project_detail_dashboard_progress_metrics">
-                                    <button t-foreach="progressMetrics"
-                                            t-as="metric"
-                                            t-key="metric.key"
-                                            type="button"
-                                            class="o_project_detail_dashboard_progress_metric"
-                                            t-on-click="() => this.openMetric(metric)">
-                                        <strong t-attf-class="#{metric.key === 'completed' ? 'o_project_detail_dashboard_metric--success' : metric.key === 'open' ? 'o_project_detail_dashboard_metric--warning' : ''}"
-                                                t-out="metric.count"/>
-                                        <span t-out="metric.title"/>
-                                    </button>
-                                </div>
                             </div>
+                            <p t-else="" class="o_project_detail_dashboard_empty_text">El proyecto no tiene fases.</p>
                         </section>
 
-                        <section class="o_project_detail_dashboard_panel o_project_detail_dashboard_states">
+                        <section class="o_project_detail_dashboard_card o_project_detail_dashboard_panel">
                             <header class="o_project_detail_dashboard_panel_header">
-                                <div>
-                                    <i class="fa fa-pie-chart" aria-hidden="true"/>
-                                    <h2>Actividades por Estado</h2>
-                                </div>
-                                <label class="o_project_detail_dashboard_inline_filter" for="project_detail_activity_scope">
-                                    <span>Mostrar</span>
-                                    <select id="project_detail_activity_scope"
-                                            t-att-value="state.activityScope"
-                                            t-on-change="onActivityScopeChange">
-                                        <option value="all">Todas</option>
-                                        <option value="main">Tareas principales</option>
-                                        <option value="subtasks">Subtareas</option>
-                                    </select>
-                                </label>
+                                <h2><i class="fa fa-bullseye" aria-hidden="true"/>Cumplimiento de hitos</h2>
                             </header>
-                            <div t-if="activityStates.length" class="o_project_detail_dashboard_states_body">
+                            <div class="o_project_detail_dashboard_donut_body">
                                 <button type="button"
                                         class="o_project_detail_dashboard_donut"
-                                        t-att-style="activityChartStyle"
-                                        t-on-click="() => this.openMetric(activityTotalMetric)">
-                                    <div>
-                                        <strong t-out="activityStateTotal"/>
-                                        <span>Actividades</span>
-                                    </div>
+                                        t-att-style="milestoneChartStyle"
+                                        t-on-click="() => this.openMetric(kpis.milestones, 'Hitos')">
+                                    <span>
+                                        <strong><t t-out="milestonePercentage"/>%</strong>
+                                        <small>de hitos cumplidos</small>
+                                    </span>
                                 </button>
                                 <div class="o_project_detail_dashboard_legend">
-                                    <button t-foreach="activityStates"
-                                            t-as="activityState"
-                                            t-key="activityState.key"
-                                            type="button"
-                                            t-on-click="() => this.openMetric(activityState)">
-                                        <span class="o_project_detail_dashboard_legend_marker"
-                                              t-att-style="'background: ' + activityState.color"/>
-                                        <span class="o_project_detail_dashboard_legend_label"
-                                              t-out="activityState.label"/>
-                                        <strong t-out="activityState.count"/>
-                                        <small><t t-out="activityState.percentage"/>%</small>
+                                    <button type="button" t-on-click="() => this.openDomain(state.data.milestone_chart.done_domain, 'Hitos cumplidos')">
+                                        <span class="o_project_detail_dashboard_dot o_project_detail_dashboard_dot--teal"/>
+                                        <span>Hitos cumplidos</span>
+                                        <strong t-out="state.data.milestone_chart.done"/>
+                                    </button>
+                                    <button type="button" t-on-click="() => this.openDomain(state.data.milestone_chart.pending_domain, 'Hitos pendientes')">
+                                        <span class="o_project_detail_dashboard_dot o_project_detail_dashboard_dot--track"/>
+                                        <span>Hitos pendientes</span>
+                                        <strong t-out="state.data.milestone_chart.pending"/>
                                     </button>
                                 </div>
-                            </div>
-                            <div t-else="" class="o_project_detail_dashboard_empty o_project_detail_dashboard_empty--panel">
-                                <i class="fa fa-tasks" aria-hidden="true"/>
-                                <p>No hay actividades para este proyecto.</p>
                             </div>
                         </section>
 
-                        <section class="o_project_detail_dashboard_panel o_project_detail_dashboard_sprints">
+                        <section class="o_project_detail_dashboard_card o_project_detail_dashboard_panel">
                             <header class="o_project_detail_dashboard_panel_header">
-                                <div>
-                                    <i class="fa fa-list-ol" aria-hidden="true"/>
-                                    <h2>Seguimiento por Sprint</h2>
-                                </div>
-                                <label class="o_project_detail_dashboard_inline_filter" for="project_detail_sprint">
-                                    <span>Sprint</span>
-                                    <select id="project_detail_sprint"
-                                            t-att-value="state.sprintFilter"
-                                            t-on-change="onSprintFilterChange">
-                                        <option value="all">Todos</option>
-                                        <option t-foreach="state.data.sprints"
-                                                t-as="sprint"
-                                                t-key="sprint.id || 'none'"
-                                                t-att-value="sprint.id || 'none'"
-                                                t-out="sprint.name"/>
-                                    </select>
-                                </label>
+                                <h2><i class="fa fa-users" aria-hidden="true"/>Carga por responsable</h2>
+                                <span>Tareas abiertas asignadas</span>
                             </header>
-                            <div class="o_project_detail_dashboard_sprint_body">
-                                <div class="o_project_detail_dashboard_sprint_metrics">
-                                    <div><strong t-out="sprintSummary.total"/><span>Actividades</span></div>
-                                    <div t-foreach="sprintSummary.states"
-                                         t-as="state"
-                                         t-key="state.key">
-                                        <strong t-out="state.count"/>
-                                        <span t-out="state.label"/>
-                                    </div>
-                                </div>
-                                <div t-if="state.sprintError" class="o_project_detail_dashboard_sprint_empty" role="alert">
-                                    No se pudo cargar el detalle de los Sprints.
-                                </div>
-                                <div t-elif="sprintTasks.length" class="o_project_detail_dashboard_sprint_list">
-                                    <button t-foreach="sprintTasks"
-                                            t-as="task"
-                                            t-key="task.id"
-                                            type="button"
-                                            t-on-click="() => this.openTask(task)">
-                                        <span class="o_project_detail_dashboard_sprint_task_name">
-                                            <strong t-out="task.name"/>
-                                            <small t-out="task.sprint_name"/>
-                                        </span>
-                                        <span t-attf-class="o_project_detail_dashboard_sprint_priority #{task.hierarchical_priority ? '' : 'o_project_detail_dashboard_sprint_priority--empty'}">
-                                            <t t-if="task.hierarchical_priority">P<t t-out="task.hierarchical_priority"/></t>
-                                            <t t-else="">Sin prioridad</t>
-                                        </span>
-                                        <span class="o_project_detail_dashboard_sprint_state" t-out="task.state_label"/>
-                                    </button>
-                                </div>
-                                <div t-elif="!state.sprintError" class="o_project_detail_dashboard_sprint_empty">
-                                    No hay actividades para esta selección.
-                                </div>
-                                <button t-if="sprintTaskCount &gt; sprintTasks.length"
+                            <div t-if="workload.length" class="o_project_detail_dashboard_bars o_project_detail_dashboard_bars--scroll">
+                                <button t-foreach="workload"
+                                        t-as="item"
+                                        t-key="item.key"
                                         type="button"
-                                        class="o_project_detail_dashboard_sprint_more"
-                                        t-on-click="openAllSprintTasks">
-                                    Ver las <t t-out="sprintTaskCount"/> actividades
+                                        class="o_project_detail_dashboard_bar_row"
+                                        t-on-click="() => this.openMetric(item, 'Tareas de ' + item.name)">
+                                    <span class="o_project_detail_dashboard_bar_label" t-out="item.name"/>
+                                    <span class="o_project_detail_dashboard_track o_project_detail_dashboard_track--large">
+                                        <span t-attf-class="o_project_detail_dashboard_bar o_project_detail_dashboard_bar--#{item.color}"
+                                              t-att-style="getBarStyle(item.width)"/>
+                                    </span>
+                                    <strong><t t-out="item.count"/> <t t-if="item.count === 1">tarea</t><t t-else="">tareas</t></strong>
                                 </button>
                             </div>
+                            <p t-else="" class="o_project_detail_dashboard_empty_text">No hay tareas abiertas.</p>
+                        </section>
+                    </div>
+
+                    <div class="o_project_detail_dashboard_tables">
+                        <section class="o_project_detail_dashboard_card o_project_detail_dashboard_panel">
+                            <header class="o_project_detail_dashboard_panel_header">
+                                <h2><i class="fa fa-calendar-check-o" aria-hidden="true"/>Próximos compromisos</h2>
+                                <button t-if="state.data.commitments.count"
+                                        type="button"
+                                        class="btn btn-link o_project_detail_dashboard_see_all"
+                                        t-on-click="() => this.openMetric(state.data.commitments, 'Próximos compromisos')">
+                                    Ver todos (<t t-out="state.data.commitments.count"/>) <i class="fa fa-arrow-right" aria-hidden="true"/>
+                                </button>
+                            </header>
+                            <div t-if="state.data.commitments.items.length" class="o_project_detail_dashboard_table_wrap">
+                                <table class="o_project_detail_dashboard_table">
+                                    <thead>
+                                        <tr>
+                                            <th>Tarea</th>
+                                            <th>Responsable</th>
+                                            <th>Fecha límite</th>
+                                            <th>Estado</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr t-foreach="state.data.commitments.items"
+                                            t-as="task"
+                                            t-key="task.id"
+                                            t-on-click="() => this.openTask(task)">
+                                            <td t-out="task.name"/>
+                                            <td t-out="task.responsible"/>
+                                            <td class="text-nowrap" t-out="formatDate(task.deadline)"/>
+                                            <td>
+                                                <span t-attf-class="o_project_detail_dashboard_pill o_project_detail_dashboard_pill--#{task.status}">
+                                                    <span class="o_project_detail_dashboard_dot"/>
+                                                    <t t-out="task.status_label"/>
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p t-else="" class="o_project_detail_dashboard_empty_text">No hay tareas abiertas con fecha límite.</p>
                         </section>
 
-                        <section class="o_project_detail_dashboard_panel o_project_detail_dashboard_critical">
+                        <section class="o_project_detail_dashboard_card o_project_detail_dashboard_panel">
                             <header class="o_project_detail_dashboard_panel_header">
-                                <div>
-                                    <i class="fa fa-exclamation-triangle" aria-hidden="true"/>
-                                    <h2>Actividades Críticas</h2>
-                                </div>
+                                <h2><i class="fa fa-exclamation-triangle o_project_detail_dashboard_icon--red" aria-hidden="true"/>Riesgos y bloqueos</h2>
+                                <button t-if="state.data.risks.count"
+                                        type="button"
+                                        class="btn btn-link o_project_detail_dashboard_see_all"
+                                        t-on-click="() => this.openMetric(state.data.risks, 'Riesgos y bloqueos')">
+                                    Ver todos (<t t-out="state.data.risks.count"/>) <i class="fa fa-arrow-right" aria-hidden="true"/>
+                                </button>
                             </header>
-                            <div class="o_project_detail_dashboard_critical_body">
-                                <div class="o_project_detail_dashboard_critical_summary">
-                                    <span class="o_project_detail_dashboard_critical_icon">
-                                        <i class="fa fa-calendar-times-o" aria-hidden="true"/>
-                                    </span>
-                                    <strong t-out="state.data.critical_activities.count"/>
-                                    <span>Actividades vencidas</span>
-                                </div>
-                                <div t-if="state.data.critical_activities.items.length"
-                                     class="o_project_detail_dashboard_critical_list">
-                                    <strong>Más antiguas</strong>
-                                    <button t-foreach="state.data.critical_activities.items"
-                                            t-as="activity"
-                                            t-key="activity.id"
-                                            type="button"
-                                            t-on-click="() => this.openTask(activity)">
-                                        <span t-out="activity.name"/>
-                                        <small t-out="formatDate(activity.deadline)"/>
-                                    </button>
-                                </div>
-                                <div t-else="" class="o_project_detail_dashboard_critical_empty">
-                                    No hay actividades vencidas.
-                                </div>
+                            <div t-if="state.data.risks.items.length" class="o_project_detail_dashboard_table_wrap">
+                                <table class="o_project_detail_dashboard_table">
+                                    <thead>
+                                        <tr>
+                                            <th>Descripción</th>
+                                            <th>Prioridad</th>
+                                            <th>Responsable</th>
+                                            <th>Próxima acción</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr t-foreach="state.data.risks.items"
+                                            t-as="risk"
+                                            t-key="risk.id"
+                                            t-on-click="() => this.openTask(risk)">
+                                            <td t-out="risk.name"/>
+                                            <td>
+                                                <span t-attf-class="o_project_detail_dashboard_pill o_project_detail_dashboard_pill--#{risk.priority}">
+                                                    <span class="o_project_detail_dashboard_dot"/>
+                                                    <t t-out="risk.priority_label"/>
+                                                </span>
+                                            </td>
+                                            <td t-out="risk.responsible"/>
+                                            <td>
+                                                <span t-out="risk.next_action"/>
+                                                <small t-if="risk.next_action_owner" class="d-block text-muted" t-out="risk.next_action_owner"/>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
                             </div>
+                            <p t-else="" class="o_project_detail_dashboard_empty_text">No hay tareas bloqueadas.</p>
                         </section>
                     </div>
                 </main>
 
-                <div t-else="" class="o_project_detail_dashboard_empty">
+                <div t-elif="state.noProject" class="o_project_detail_dashboard_empty">
                     <i class="fa fa-folder-open-o" aria-hidden="true"/>
-                    <h2>Selecciona un proyecto</h2>
-                    <p>Elige un proyecto para consultar su avance y sus actividades.</p>
+                    <h2>No hay proyectos para estos filtros</h2>
+                    <p>Cambia el cliente o el gerente, o limpia los filtros.</p>
                 </div>
             </div>
         </div>

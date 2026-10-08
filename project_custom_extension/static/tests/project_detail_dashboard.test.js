@@ -24,116 +24,84 @@ function makeData(projectId = 10) {
             customer_name: "Cliente A",
             responsible_name: "Responsable",
             start_date: "2026-01-10",
-            end_date: "2026-03-10",
-            status: "on_track",
-            status_label: "En tiempo",
+            end_date: "2026-12-10",
         },
-        progress: {
-            mode: "general",
-            percentage: 72,
-            total_tasks: 10,
-            completed_tasks: 7,
-            open_tasks: 3,
-            metrics: [
-                {
-                    key: "total",
-                    title: "Total de actividades",
-                    count: 10,
-                    model: "project.task",
-                    domain: [["project_id", "=", projectId], ["active", "=", true]],
-                },
-                {
-                    key: "completed",
-                    title: "Completadas",
-                    count: 7,
-                    model: "project.task",
-                    domain: [["project_id", "=", projectId], ["state", "in", ["1_done"]]],
-                },
-                {
-                    key: "open",
-                    title: "Pendientes",
-                    count: 3,
-                    model: "project.task",
-                    domain: [["project_id", "=", projectId], ["state", "in", ["01_in_progress"]]],
-                },
-            ],
-            parent_tasks: [],
+        filters: {
+            phases: [{ id: 51, name: "Diseño" }],
+            phase_id: false,
+            reference_date: "2026-10-08",
         },
-        activities_by_state: [
-            {
-                key: "1_done",
-                label: "Hecho",
-                count: 7,
-                model: "project.task",
-                domain: [["project_id", "=", projectId], ["state", "=", "1_done"]],
-            },
-            {
-                key: "01_in_progress",
-                label: "En progreso",
-                count: 3,
-                model: "project.task",
-                domain: [["project_id", "=", projectId], ["state", "=", "01_in_progress"]],
-            },
+        kpis: {
+            progress: { percentage: 68, completed: 17, total: 25, domain: [["id", "=", 1]] },
+            schedule: { key: "attention", label: "En atención", detail: "Esperado 78% · real 68%" },
+            overdue: { count: 7, domain: [["id", "=", 2]] },
+            milestones: { done: 8, total: 10, domain: [["id", "=", 3]] },
+            blockers: { count: 2, domain: [["id", "=", 4]] },
+        },
+        phase_progress: [{
+            id: 51,
+            name: "Diseño",
+            percentage: 90,
+            weight: 30,
+            completed: 9,
+            total: 10,
+            selected: false,
+            domain: [["id", "child_of", 51]],
+        }],
+        milestone_chart: {
+            done: 8,
+            pending: 2,
+            done_domain: [["id", "=", 5]],
+            pending_domain: [["id", "=", 6]],
+        },
+        workload: [
+            { key: "user_1", name: "Ana Torres", count: 8, domain: [["user_ids", "in", 1]] },
+            { key: "unassigned", name: "Sin asignar", count: 2, domain: [["user_ids", "=", false]] },
         ],
-        activity_states_by_scope: {
-            all: [
-                {
-                    key: "1_done",
-                    label: "Hecho",
-                    count: 7,
-                    model: "project.task",
-                    domain: [["project_id", "=", projectId], ["state", "=", "1_done"]],
-                },
-                {
-                    key: "01_in_progress",
-                    label: "En progreso",
-                    count: 3,
-                    model: "project.task",
-                    domain: [["project_id", "=", projectId], ["state", "=", "01_in_progress"]],
-                },
-            ],
-            main: [{
-                key: "01_in_progress",
-                label: "En progreso",
-                count: 2,
-                model: "project.task",
-                domain: [["project_id", "=", projectId], ["state", "=", "01_in_progress"], ["parent_id", "=", false]],
-            }],
-            subtasks: [{
-                key: "1_done",
-                label: "Hecho",
-                count: 7,
-                model: "project.task",
-                domain: [["project_id", "=", projectId], ["state", "=", "1_done"], ["parent_id", "!=", false]],
-            }],
-        },
-        sprints: [
-            {
-                id: 4,
-                name: "Sprint 1",
-                total: 2,
-                states: [
-                    { key: "1_done", label: "Hecha", count: 1 },
-                    { key: "01_in_progress", label: "En progreso", count: 1 },
-                ],
-            },
-            {
-                id: false,
-                name: "Sin Sprint",
-                total: 1,
-                states: [{ key: "1_canceled", label: "Cancelada", count: 1 }],
-            },
-        ],
-        critical_activities: {
+        commitments: {
             count: 1,
-            items: [{ id: 99, name: "Actividad vencida", deadline: "2026-01-05" }],
+            domain: [["id", "=", 7]],
+            items: [{
+                id: 70,
+                name: "Entrega de diseño",
+                responsible: "Ana Torres",
+                deadline: "2026-10-15",
+                status: "on_time",
+                status_label: "En tiempo",
+            }],
         },
+        risks: {
+            count: 1,
+            domain: [["id", "=", 8]],
+            items: [{
+                id: 80,
+                name: "Dependencia externa",
+                priority: "high",
+                priority_label: "Alta",
+                responsible: "Carlos Méndez",
+                next_action: "Cerrar «Insumos»",
+                next_action_owner: "Lucía Rojas",
+            }],
+        },
+    };
+}
+
+function filtersResult(projectId = 10, extra = {}) {
+    return {
+        customer_ids: [1, 2],
+        manager_ids: [7],
+        selected_customer: false,
+        selected_manager: false,
+        selected_project: projectId
+            ? { id: projectId, display_name: `Proyecto ${projectId}` }
+            : false,
+        ...extra,
     };
 }
 
 
 describe("detalle de proyecto", () => {
-    const storageKey = `project_custom_extension.project_detail_dashboard.filters.${session.db}.${session.uid}`;
+    const storageKey = `project_custom_extension.project_detail_dashboard.v2.filters.${session.db}.${session.uid}`;
     let executedActions;
 
     beforeEach(() => {
@@ -149,300 +117,200 @@ describe("detalle de proyecto", () => {
         });
     });
 
-    test("starts without project details and exposes all active projects", async () => {
+    test("selects a project on start and renders the executive dashboard", async () => {
         const calls = [];
         mockService("orm", {
             call(model, method, args, kwargs) {
-                calls.push({ model, method, args, kwargs });
-                return { customer_ids: [1, 2] };
+                calls.push({ method, kwargs });
+                return method === "get_project_detail_dashboard_filters"
+                    ? filtersResult(10)
+                    : makeData(10);
             },
         });
 
-        const component = await mountWithCleanup(ProjectDetailDashboard, {
-            noMainContainer: true,
-        });
+        await mountWithCleanup(ProjectDetailDashboard, { noMainContainer: true });
 
-        expect(".o_project_detail_dashboard_empty").toHaveCount(1);
-        expect(calls).toHaveLength(1);
-        expect(calls[0].method).toBe("get_project_detail_dashboard_filters");
-        expect(component.getProjectDomain()).toEqual([["active", "=", true]]);
+        expect(calls.map((call) => call.method)).toEqual([
+            "get_project_detail_dashboard_filters",
+            "get_project_detail_dashboard_data",
+        ]);
+        expect(calls[1].kwargs).toEqual({
+            project_id: 10,
+            partner_id: false,
+            manager_id: false,
+            phase_id: false,
+            cutoff: false,
+        });
+        expect(".o_project_detail_dashboard_kpi").toHaveCount(5);
+        expect(".o_project_detail_dashboard_kpi--tone-amber").toHaveCount(1);
+        expect(".o_project_detail_dashboard_table tbody tr").toHaveCount(2);
+        expect(".o_project_detail_dashboard_pill--high").toHaveCount(1);
+        expect(".o_project_detail_dashboard_bar_row").toHaveCount(3);
     });
 
-    test("restricts project domain and clears selected project when customer changes", async () => {
+    test("shows a message when no project matches the filters", async () => {
         mockService("orm", {
-            call(model, method) {
-                return method === "get_project_detail_dashboard_filters"
-                    ? { customer_ids: [1, 2] }
-                    : makeData();
+            call() {
+                return filtersResult(false);
+            },
+        });
+
+        await mountWithCleanup(ProjectDetailDashboard, { noMainContainer: true });
+
+        expect(".o_project_detail_dashboard_empty").toHaveCount(1);
+        expect(".o_project_detail_dashboard_content").toHaveCount(0);
+    });
+
+    test("reloads on every filter change and clearing keeps the project", async () => {
+        const filterCalls = [];
+        const dataCalls = [];
+        mockService("orm", {
+            call(model, method, args, kwargs) {
+                if (method === "get_project_detail_dashboard_filters") {
+                    filterCalls.push(kwargs);
+                    return filtersResult(kwargs.project_id || (kwargs.partner_id ? 20 : 10), {
+                        selected_customer: kwargs.partner_id
+                            ? { id: kwargs.partner_id, display_name: "Cliente B" }
+                            : false,
+                    });
+                }
+                dataCalls.push(kwargs);
+                return makeData(kwargs.project_id);
             },
         });
 
         const component = await mountWithCleanup(ProjectDetailDashboard, {
             noMainContainer: true,
         });
-        await component.onProjectUpdate([{ id: 10, display_name: "Proyecto 10" }]);
-        expect(component.state.data.project.id).toBe(10);
+        expect(".o_project_detail_dashboard_apply").toHaveCount(0);
 
-        component.onCustomerUpdate([{ id: 2, display_name: "Cliente B" }]);
+        await component.onPhaseChange({ target: { value: "51" } });
+        expect(dataCalls.at(-1)).toMatchObject({ project_id: 10, phase_id: 51 });
 
-        expect(component.state.selectedProject).toBe(false);
-        expect(component.state.data).toBe(false);
+        await component.onCutoffChange({ target: { value: "2026-08" } });
+        expect(dataCalls.at(-1)).toEqual({
+            project_id: 10,
+            partner_id: false,
+            manager_id: false,
+            phase_id: 51,
+            cutoff: "2026-08",
+        });
+        expect(JSON.parse(browser.localStorage.getItem(storageKey))).toEqual({
+            customer_id: false,
+            manager_id: false,
+            project_id: 10,
+            phase_id: "51",
+            cutoff: "2026-08",
+        });
+
+        // Clearing the project field keeps the current project.
+        await component.onProjectUpdate([]);
+        expect(filterCalls.at(-1)).toMatchObject({ project_id: 10 });
+        expect(component.state.applied.project.id).toBe(10);
+
+        // A new customer drops the project and the server picks one.
+        await component.onCustomerUpdate([{ id: 2, display_name: "Cliente B" }]);
+        expect(filterCalls.at(-1)).toEqual({
+            partner_id: 2,
+            project_id: false,
+            manager_id: false,
+        });
+        expect(component.state.applied.project.id).toBe(20);
+        expect(component.state.applied.cutoff).toBe("2026-08");
         expect(component.getProjectDomain()).toEqual([
             ["active", "=", true],
             ["partner_id", "=", 2],
         ]);
-        expect(".o_project_detail_dashboard_empty").toHaveCount(1);
+
+        await component.clearFilters();
+        expect(filterCalls.at(-1)).toEqual({
+            partner_id: false,
+            project_id: 20,
+            manager_id: false,
+        });
+        expect(component.state.applied.project.id).toBe(20);
+        expect(component.state.applied.phaseId).toBe("");
+        expect(component.state.applied.cutoff).toBe("");
     });
 
-    test("loads detail only after project selection", async () => {
-        const detailCalls = [];
-        mockService("orm", {
-            call(model, method, args, kwargs) {
-                if (method === "get_project_detail_dashboard_filters") {
-                    return { customer_ids: [1] };
-                }
-                if (method === "get_project_sprint_dashboard_data") {
-                    return { count: 0, tasks: [], domain: [] };
-                }
-                detailCalls.push(kwargs);
-                return makeData(12);
-            },
-        });
-
-        const component = await mountWithCleanup(ProjectDetailDashboard, {
-            noMainContainer: true,
-        });
-        expect(detailCalls).toHaveLength(0);
-
-        await component.onProjectUpdate([{ id: 12, display_name: "Proyecto 12" }]);
-        await animationFrame();
-
-        expect(detailCalls).toEqual([{ project_id: 12, partner_id: false }]);
-        expect(".o_project_detail_dashboard_content").toHaveCount(1);
-        expect(".o_project_detail_dashboard_project_identity h3").toHaveText(
-            "Proyecto 12"
-        );
-    });
-
-    test("persists valid customer and project filters", async () => {
+    test("restores stored filters", async () => {
         const filterCalls = [];
         mockService("orm", {
             call(model, method, args, kwargs) {
                 if (method === "get_project_detail_dashboard_filters") {
                     filterCalls.push(kwargs);
-                    return {
-                        customer_ids: [2],
-                        selected_customer: { id: 2, display_name: "Cliente B" },
-                        selected_project: { id: 12, display_name: "Proyecto 12" },
-                    };
+                    return filtersResult(12, {
+                        selected_manager: { id: 7, display_name: "Gerente" },
+                    });
                 }
                 return makeData(12);
             },
         });
         browser.localStorage.setItem(
             storageKey,
-            JSON.stringify({ customer_id: 2, project_id: 12 })
+            JSON.stringify({ manager_id: 7, project_id: 12, phase_id: 51, cutoff: "2026-05" })
         );
 
         const component = await mountWithCleanup(ProjectDetailDashboard, {
             noMainContainer: true,
         });
 
-        expect(filterCalls).toEqual([{ partner_id: 2, project_id: 12 }]);
-        expect(component.state.selectedCustomer.id).toBe(2);
-        expect(component.state.selectedProject.id).toBe(12);
+        expect(filterCalls).toEqual([{ partner_id: false, project_id: 12, manager_id: 7 }]);
+        expect(component.state.applied.manager.id).toBe(7);
+        expect(component.state.applied.phaseId).toBe("51");
+        expect(component.state.applied.cutoff).toBe("2026-05");
         expect(component.state.data.project.id).toBe(12);
     });
 
-    test("opens the project task kanban and clickable metric domains", async () => {
+    test("opens task lists from metrics and rows", async () => {
         mockService("orm", {
             call(model, method) {
-                if (method === "get_project_detail_dashboard_filters") {
-                    return { customer_ids: [1] };
-                }
-                return method === "get_project_sprint_dashboard_data"
-                    ? { count: 0, tasks: [], domain: [] }
-                    : makeData(12);
+                return method === "get_project_detail_dashboard_filters"
+                    ? filtersResult(10)
+                    : makeData(10);
             },
         });
 
-        const component = await mountWithCleanup(ProjectDetailDashboard, {
-            noMainContainer: true,
-        });
-        await component.onProjectUpdate([{ id: 12, display_name: "Proyecto 12" }]);
+        await mountWithCleanup(ProjectDetailDashboard, { noMainContainer: true });
 
-        component.openProjectTasks();
+        document.querySelector(".o_project_detail_dashboard_kpi--accent").click();
+        document.querySelector(".o_project_detail_dashboard_table tbody tr").click();
+        await animationFrame();
+
         expect(executedActions[0].res_model).toBe("project.task");
-        expect(executedActions[0].views[0]).toEqual([false, "kanban"]);
-        expect(executedActions[0].domain).toEqual([["project_id", "=", 12]]);
-
-        component.openMetric(component.progressMetrics[1]);
-        expect(executedActions[1].domain).toEqual(
-            component.progressMetrics[1].domain
-        );
-
-        component.openMetric(component.activityStates[0]);
-        expect(executedActions[2].domain).toEqual(
-            component.activityStates[0].domain
-        );
+        expect(executedActions[0].domain).toEqual([["id", "=", 2]]);
+        expect(executedActions[1].res_id).toBe(70);
     });
 
-    test("opens the shared project gantt action from project detail", async () => {
-        mockService("orm", {
-            call(model, method) {
-                if (method === "get_project_detail_dashboard_filters") {
-                    return { customer_ids: [1] };
-                }
-                return method === "get_project_sprint_dashboard_data"
-                    ? { count: 0, tasks: [], domain: [] }
-                    : makeData(12);
-            },
-        });
-
-        const component = await mountWithCleanup(ProjectDetailDashboard, {
-            noMainContainer: true,
-        });
-        await component.onProjectUpdate([{ id: 12, display_name: "Proyecto 12" }]);
-
-        component.openProjectGantt();
-
-        expect(executedActions[0]).toEqual({
-            type: "ir.actions.client",
-            name: "Cronograma de proyecto",
-            tag: "project_custom_extension.ProjectGantt",
-            target: "current",
-            context: { project_id: 12 },
-        });
-    });
-
-    test("does not let a stale project request replace the latest selection", async () => {
-        const pending = new Map();
+    test("does not let a stale request replace the latest selection", async () => {
+        let resolveFirst;
+        let dataCall = 0;
         mockService("orm", {
             call(model, method, args, kwargs) {
                 if (method === "get_project_detail_dashboard_filters") {
-                    return { customer_ids: [1] };
+                    return filtersResult(kwargs.project_id || 10);
                 }
-                if (method === "get_project_sprint_dashboard_data") {
-                    return { count: 0, tasks: [], domain: [] };
+                dataCall += 1;
+                if (dataCall === 2) {
+                    return new Promise((resolve) => {
+                        resolveFirst = () => resolve(makeData(kwargs.project_id));
+                    });
                 }
-                return new Promise((resolve) => pending.set(kwargs.project_id, resolve));
+                return makeData(kwargs.project_id);
             },
         });
 
         const component = await mountWithCleanup(ProjectDetailDashboard, {
             noMainContainer: true,
         });
-        const firstRequest = component.onProjectUpdate([
-            { id: 10, display_name: "Proyecto 10" },
-        ]);
-        const secondRequest = component.onProjectUpdate([
+        const staleRequest = component.onProjectUpdate([
             { id: 11, display_name: "Proyecto 11" },
         ]);
-
-        pending.get(11)(makeData(11));
-        await secondRequest;
-        pending.get(10)(makeData(10));
-        await firstRequest;
-
-        expect(component.state.data.project.id).toBe(11);
-        expect(component.state.selectedProject.id).toBe(11);
-    });
-
-    test("filters activity states and clickable domains by task hierarchy", async () => {
-        mockService("orm", {
-            call(model, method) {
-                if (method === "get_project_detail_dashboard_filters") {
-                    return { customer_ids: [1] };
-                }
-                return method === "get_project_sprint_dashboard_data"
-                    ? { count: 0, tasks: [], domain: [] }
-                    : makeData(12);
-            },
-        });
-
-        const component = await mountWithCleanup(ProjectDetailDashboard, {
-            noMainContainer: true,
-        });
+        await animationFrame();
         await component.onProjectUpdate([{ id: 12, display_name: "Proyecto 12" }]);
+        resolveFirst();
+        await staleRequest;
 
-        component.onActivityScopeChange({ target: { value: "main" } });
-        expect(component.activityStateTotal).toBe(2);
-        expect(component.activityStates[0].domain).toEqual([
-            ["project_id", "=", 12],
-            ["state", "=", "01_in_progress"],
-            ["parent_id", "=", false],
-        ]);
-        expect(component.activityTotalMetric.domain).toEqual([
-            ["project_id", "=", 12],
-            ["active", "=", true],
-            ["parent_id", "=", false],
-        ]);
-
-        component.onActivityScopeChange({ target: { value: "subtasks" } });
-        expect(component.activityStateTotal).toBe(7);
-        expect(component.activityStates[0].domain).toEqual([
-            ["project_id", "=", 12],
-            ["state", "=", "1_done"],
-            ["parent_id", "!=", false],
-        ]);
-    });
-
-    test("loads selected sprint tasks and opens the complete filtered list", async () => {
-        const sprintCalls = [];
-        mockService("orm", {
-            call(model, method, args, kwargs) {
-                if (method === "get_project_detail_dashboard_filters") {
-                    return { customer_ids: [1] };
-                }
-                if (method === "get_project_sprint_dashboard_data") {
-                    sprintCalls.push(kwargs);
-                    return {
-                        count: 25,
-                        domain: [["project_id", "=", 12], ["sprint_id", "=", 4]],
-                        tasks: [{
-                            id: 90,
-                            name: "Historia prioritaria",
-                            sprint_name: "Sprint 1",
-                            state_label: "En progreso",
-                            hierarchical_priority: 1,
-                        }],
-                    };
-                }
-                return makeData(12);
-            },
-        });
-
-        const component = await mountWithCleanup(ProjectDetailDashboard, {
-            noMainContainer: true,
-        });
-        await component.onProjectUpdate([{ id: 12, display_name: "Proyecto 12" }]);
-        expect(component.sprintSummary).toEqual({
-            total: 3,
-            states: [
-                { key: "1_done", label: "Hecha", count: 1 },
-                { key: "01_in_progress", label: "En progreso", count: 1 },
-                { key: "1_canceled", label: "Cancelada", count: 1 },
-            ],
-        });
-        await component.onSprintFilterChange({ target: { value: "4" } });
-
-        expect(sprintCalls.at(-1)).toEqual({
-            project_id: 12,
-            sprint_filter: "4",
-            limit: 20,
-        });
-        expect(component.sprintSummary).toEqual({
-            total: 2,
-            states: [
-                { key: "1_done", label: "Hecha", count: 1 },
-                { key: "01_in_progress", label: "En progreso", count: 1 },
-            ],
-        });
-        expect(component.sprintTasks[0].name).toBe("Historia prioritaria");
-        component.openAllSprintTasks();
-        expect(executedActions[0].domain).toEqual([
-            ["project_id", "=", 12],
-            ["sprint_id", "=", 4],
-        ]);
+        expect(component.state.data.project.id).toBe(12);
     });
 });

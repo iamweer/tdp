@@ -257,6 +257,38 @@ class TestProjectRoleAccess(TransactionCase):
                 with self.assertRaises(AccessError):
                     task.write(values)
 
+    def test_client_changes_stage_and_state_of_assigned_tasks(self):
+        stages = {stage.name: stage for stage in self.client_project.type_ids}
+        task = self.client_assigned_task.with_user(self.client_user)
+
+        task.write({"stage_id": stages["EN CURSO"].id})
+        self.assertEqual(task.stage_id, stages["EN CURSO"])
+        task.write({"state": "02_changes_requested"})
+        self.assertEqual(task.state, "02_changes_requested")
+
+        # Moving the card in "Mis tareas" writes the unified stage.
+        task.write({
+            "unified_stage_id": self.env.ref(
+                "project_custom_extension.unified_stage_client_validation"
+            ).id,
+        })
+        self.assertEqual(task.stage_id, stages["VALIDACION CLIENTE"])
+
+        task.write({"stage_id": stages["RESUELTO"].id})
+        self.assertEqual(task.state, "1_done")
+
+        foreign_task = self.client_context_task.with_user(self.client_user)
+        for values in (
+            {"stage_id": stages["EN CURSO"].id},
+            {"state": "1_done"},
+            {"unified_stage_id": self.env.ref(
+                "project_custom_extension.unified_stage_resolved"
+            ).id},
+        ):
+            with self.subTest(values=values):
+                with self.assertRaises(AccessError):
+                    foreign_task.write(values)
+
     def test_client_cannot_create_delete_projects_or_tasks(self):
         with self.assertRaises(AccessError):
             self.Project.with_user(self.client_user).create({
