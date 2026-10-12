@@ -77,7 +77,12 @@ class ProjectTaskTimeEntry(models.Model):
     )
     name = fields.Char(string="Descripción")
     unit_amount = fields.Float(string="Horas", required=True, default=0.0)
-    can_choose_employee = fields.Boolean(compute="_compute_can_choose_employee")
+    # The default is needed for new records: onchange fills every field
+    # without a default with False and never recomputes dependency-less fields.
+    can_choose_employee = fields.Boolean(
+        compute="_compute_can_choose_employee",
+        default=lambda self: self._is_project_manager(),
+    )
 
     @api.model
     def _is_project_manager(self):
@@ -90,6 +95,7 @@ class ProjectTaskTimeEntry(models.Model):
             and not self._is_project_manager()
         )
 
+    @api.depends_context("uid")
     def _compute_can_choose_employee(self):
         self.can_choose_employee = self._is_project_manager()
 

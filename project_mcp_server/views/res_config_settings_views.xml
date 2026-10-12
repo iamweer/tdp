@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="res_config_settings_view_form_project_mcp" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.project.mcp</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="project.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//app[@name='project']" position="inside">
+                <block title="Asistentes de IA (MCP)" id="project_mcp_settings">
+                    <setting id="project_mcp_enabled"
+                             help="Permite que asistentes como Claude o Cursor consulten y operen proyectos con la API key de cada usuario. Solo los usuarios del grupo «Acceso MCP a proyectos» pueden conectarse.">
+                        <field name="project_mcp_enabled"/>
+                        <div class="content-group" invisible="not project_mcp_enabled">
+                            <div class="row mt16">
+                                <label for="project_mcp_url" class="col-lg-4 o_light_label"/>
+                                <field name="project_mcp_url" widget="CopyClipboardChar" class="col-lg-8"/>
+                            </div>
+                            <div class="row mt8">
+                                <label for="project_mcp_allowed_origins" class="col-lg-4 o_light_label"/>
+                                <field name="project_mcp_allowed_origins" class="col-lg-8"
+                                       placeholder="https://ejemplo.com"/>
+                            </div>
+                        </div>
+                    </setting>
+                </block>
+            </xpath>
+        </field>
+    </record>
+</odoo>

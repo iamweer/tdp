@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="group_mcp_access" model="res.groups">
+        <field name="name">Acceso MCP a proyectos</field>
+        <field name="comment">Permite conectar asistentes de IA al módulo de proyectos con una API key personal.</field>
+    </record>
+</odoo>

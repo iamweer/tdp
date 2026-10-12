@@ -107,6 +107,27 @@ class TestProjectTaskTimeEntry(TransactionCase):
         self.assertEqual(self.task.time_entry_ids.employee_id, self.alice_employee)
         self.assertEqual(self.task.with_user(self.alice).time_spent_hours, 1.5)
 
+    def test_task_form_manager_can_choose_employee(self):
+        with Form(self.task.with_user(self.manager)) as task_form:
+            with task_form.time_entry_ids.new() as line:
+                self.assertTrue(line.can_choose_employee)
+                line.employee_id = self.bob_employee
+                line.unit_amount = 2
+        self.assertEqual(self.task.time_entry_ids.employee_id, self.bob_employee)
+
+        with Form(self.task.with_user(self.alice)) as task_form:
+            with task_form.time_entry_ids.new() as line:
+                self.assertFalse(line.can_choose_employee)
+                with self.assertRaises(AssertionError):
+                    line.employee_id = self.bob_employee
+                line.unit_amount = 1
+
+    def test_list_view_manager_can_choose_employee(self):
+        values = self.Entry.with_user(self.manager).onchange(
+            {}, [], {"can_choose_employee": {}, "employee_id": {}}
+        )["value"]
+        self.assertTrue(values["can_choose_employee"])
+
     def test_user_cannot_log_hours_for_others(self):
         with self.assertRaises(AccessError):
             self._entry(self.alice, employee_id=self.bob_employee.id)
