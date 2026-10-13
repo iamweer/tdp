@@ -1,4 +1,4 @@
-from odoo import fields
+from odoo import Command, fields
 from odoo.tests import new_test_user, tagged
 
 from .common import McpCase
@@ -114,6 +114,79 @@ class TestMcpTools(McpCase):
             self.user, "move_task_stage", task_id=self.task.id, stage_id=foreign_stage.id
         )
         self.assertTrue(error)
+
+    def _project_with_stages(self, *names):
+        Stage = self.env["project.task.type"]
+        project = self.env["project.project"].create({"name": "Proyecto cierre MCP"})
+        stages = {
+            name: Stage.create({"name": name, "sequence": sequence})
+            for sequence, name in enumerate(names)
+        }
+        project.type_ids = [Command.set([stage.id for stage in stages.values()])]
+        task = self.env["project.task"].create({
+            "name": "Tarea cierre MCP",
+            "project_id": project.id,
+            "stage_id": stages[names[0]].id,
+            "user_ids": [Command.link(self.user.id)],
+        })
+        return task, stages
+
+    def test_close_task_moves_to_resolved_stage(self):
+        task, stages = self._project_with_stages("EN CURSO", "RESUELTO")
+        error, data = self.call(self.user, "close_task", task_id=task.id)
+        self.assertFalse(error, data)
+        self.assertTrue(data["closed"])
+        self.assertEqual(task.stage_id, stages["RESUELTO"])
+        self.assertEqual(task.state, "1_done")
+
+        error, data = self.call(self.user, "close_task", task_id=task.id)
+        self.assertFalse(error, data)
+        self.assertTrue(data["closed"])
+
+    def test_close_task_without_resolved_stage(self):
+        task, stages = self._project_with_stages("EN CURSO", "Pendiente cliente")
+        error, message = self.call(self.user, "close_task", task_id=task.id)
+        self.assertTrue(error)
+        self.assertIn("Pendiente cliente", message)
+        self.assertEqual(task.stage_id, stages["EN CURSO"])
+
+    def test_close_task_uses_resolved_synonym(self):
+        task, stages = self._project_with_stages("En proceso", "Completado")
+        error, data = self.call(self.user, "close_task", task_id=task.id)
+        self.assertFalse(error, data)
+        self.assertEqual(task.stage_id, stages["Completado"])
+        self.assertEqual(task.state, "1_done")
+
+    def test_close_task_asks_about_pending_validation_stages(self):
+        task, stages = self._project_with_stages(
+            "EN CURSO", "VALIDACION INTERNA", "VALIDACION CLIENTE", "RESUELTO"
+        )
+        error, data = self.call(self.user, "close_task", task_id=task.id)
+        self.assertFalse(error, data)
+        self.assertFalse(data["closed"])
+        self.assertTrue(data["needs_confirmation"])
+        self.assertEqual(
+            [stage["id"] for stage in data["validation_stages"]],
+            [stages["VALIDACION INTERNA"].id, stages["VALIDACION CLIENTE"].id],
+        )
+        self.assertEqual(task.stage_id, stages["EN CURSO"])
+
+        # Once in the last validation stage, nothing is left to ask about.
+        task.stage_id = stages["VALIDACION CLIENTE"]
+        error, data = self.call(self.user, "close_task", task_id=task.id)
+        self.assertFalse(error, data)
+        self.assertTrue(data["closed"])
+        self.assertEqual(task.stage_id, stages["RESUELTO"])
+
+    def test_close_task_skip_validation(self):
+        task, stages = self._project_with_stages("EN CURSO", "VALIDACION INTERNA", "RESUELTO")
+        error, data = self.call(
+            self.user, "close_task", task_id=task.id, skip_validation=True
+        )
+        self.assertFalse(error, data)
+        self.assertTrue(data["closed"])
+        self.assertEqual(task.stage_id, stages["RESUELTO"])
+        self.assertEqual(task.state, "1_done")
 
     def test_log_time_and_my_entries(self):
         error, data = self.call(

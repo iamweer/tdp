@@ -85,11 +85,14 @@ class TestProjectCustomExtension(TransactionCase):
         for name in (
             "Resuelto", "Resuelta", "RESUELTO", "resuelta", "Resueltos",
             "RESUELTAS", "  Resuelto  ", "Resuelto.", "RESUÉLTO",
+            "Completado", "COMPLETADAS", "Terminado", "Finalizada", "Cerrado",
+            "Concluido", "Hecho", "Listo", "Done", "Completed", "Closed",
         ):
             self.assertTrue(is_resolved_stage_name(name), name)
         for name in (
             False, "", "Resolver", "No resuelto", "Resuelto parcialmente",
-            "En progreso",
+            "En progreso", "Pendiente cliente", "Listo para revisión",
+            "Cancelado", "No completado",
         ):
             self.assertFalse(is_resolved_stage_name(name), name)
 
@@ -99,7 +102,7 @@ class TestProjectCustomExtension(TransactionCase):
             "name": "En progreso",
             "project_ids": [Command.link(self.project.id)],
         })
-        for stage_name in ("Resuelta", "RESUELTO", " resueltas "):
+        for stage_name in ("Resuelta", "RESUELTO", " resueltas ", "Completado", "Terminada"):
             stage = stage_model.create({
                 "name": stage_name,
                 "project_ids": [Command.link(self.project.id)],

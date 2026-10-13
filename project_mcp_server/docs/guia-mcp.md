@@ -338,6 +338,7 @@ Todas respetan los permisos del usuario. Las de **escritura** están marcadas pa
 | `create_task` | Crea una tarea. Con `parent_id` la crea como subtarea de una fase. | `project_id`, `name` (obligatorios), `parent_id`, `description`, `user_ids`, `date_deadline`, `planned_date_begin`, `allocated_hours`, `priority`, `sprint_id`, `tag_ids` |
 | `update_task` | Cambia solo los campos que se envían. | `task_id` (obligatorio) + los mismos campos de `create_task` |
 | `move_task_stage` | Cambia la etapa de una tarea, ya sea a una etapa del proyecto (`stage_id`) o a una etapa unificada (`unified_stage_id`). | `task_id` (obligatorio) + uno de los dos |
+| `close_task` | Mueve la tarea a la etapa **Resuelto** de su proyecto (o un sinónimo, como "Completado") (Odoo la marca como Hecha automáticamente). Es la que usa el asistente cuando pides "cerrar", "terminar", "finalizar" o un sinónimo. Si a la tarea aún le quedan etapas de validación (interna o cliente), primero te pregunta si prefieres dejarla en una de ellas o resolverla. | `task_id` (obligatorio), `skip_validation` |
 | `log_time` | Registra horas en una tarea (más de 0 y hasta 24 por registro). Por defecto **a tu nombre**; un administrador de proyectos puede indicar otro empleado o usuario. | `task_id`, `hours` (obligatorios), `date`, `description`, `employee_id` o `user_id` |
 | `post_task_message` | Publica un comentario en el historial (chatter) de la tarea. | `task_id`, `body` (obligatorios) |
 
@@ -400,6 +401,7 @@ Escríbele al asistente en lenguaje normal; él elige la herramienta.
 | `Su usuario no tiene acceso MCP` | Falta el grupo | El administrador lo asigna (sección 2.3) |
 | `El servidor MCP está desactivado` | La casilla no está marcada | Actívala y **guarda** (sección 2.2) |
 | `Origin not allowed` (403) | La llamada viene de una página web | Agrega ese origen en **Orígenes permitidos** |
+| `400 Session expired (invalid CSRF token)` | La URL no termina en `/mcp` (por ejemplo `https://tu-dominio` o `https://tu-dominio/`), o el proxy reescribe la ruta | Usa la URL completa `https://tu-dominio/mcp`. Si ya la usas, revisa que el `proxy_pass` de Nginx no termine en `/` |
 | `404` en `/mcp` | El módulo no está instalado, o el servidor tiene varias bases de datos sin `dbfilter` | Instala el módulo; en el servidor configura `dbfilter` (sección 9) |
 | `405` | Se abrió `/mcp` en el navegador (GET) | Es normal: el servidor solo acepta POST de los asistentes |
 | `claude: command not found` | El comando `claude` no está instalado en la terminal | Ver sección 5.1 o 5.2 |

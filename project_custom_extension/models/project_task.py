@@ -7,7 +7,10 @@ from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tools import float_compare, float_repr
 
-RESOLVED_STAGE_NAME_PATTERN = re.compile(r"^resuelt[oa]s?$")
+RESOLVED_STAGE_NAME_PATTERN = re.compile(
+    r"^(?:(?:resuelt|completad|terminad|finalizad|cerrad|concluid|hech|list)[oa]s?"
+    r"|done|completed?|closed|finished|resolved)$"
+)
 
 
 def normalize_stage_name(name):
@@ -27,9 +30,11 @@ def normalize_stage_name(name):
 
 
 def is_resolved_stage_name(name):
-    """Indica si el nombre de etapa es una variante de "Resuelto".
+    """Indica si el nombre de etapa es "Resuelto" o un sinónimo.
 
-    Acepta género y número (Resuelto, RESUELTA, resueltos...).
+    Acepta sinónimos (Completado, Terminado, Finalizado, Cerrado, Hecho...),
+    con género y número (RESUELTA, completados...), y sus equivalentes en
+    inglés (Done, Completed, Closed...).
     """
     return bool(RESOLVED_STAGE_NAME_PATTERN.match(normalize_stage_name(name)))
 

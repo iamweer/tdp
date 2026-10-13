@@ -1,11 +1,17 @@
 from odoo import Command, _, api, fields, models
 from odoo.addons.project.models.project_task import CLOSED_STATES
+from odoo.addons.project_custom_extension.models.project_task import is_resolved_stage_name
 from odoo.tools import html2plaintext, plaintext2html
 
 from .mcp_server import McpToolInputError
 
 
 MAX_LIMIT = 100
+RESOLVED_UNIFIED_STAGE = "project_custom_extension.unified_stage_resolved"
+VALIDATION_UNIFIED_STAGES = (
+    "project_custom_extension.unified_stage_internal_validation",
+    "project_custom_extension.unified_stage_client_validation",
+)
 DEFAULT_LIMIT = 20
 
 READ_ONLY = {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False}
@@ -232,6 +238,34 @@ class ProjectMcpServerTools(models.AbstractModel):
                 },
                 "annotations": {**WRITE, "idempotentHint": True},
                 "method": "_mcp_tool_move_task_stage",
+            },
+            "close_task": {
+                "description": (
+                    "Cierra una tarea moviéndola a la etapa Resuelto (o un sinónimo, como "
+                    "Completado) de su proyecto (el estado "
+                    "Hecho lo marca Odoo automáticamente). Úsela cuando el usuario pida cerrar, "
+                    "terminar, finalizar o cualquier sinónimo. Si al proyecto le quedan etapas "
+                    "de validación (interna o cliente) posteriores a la etapa actual, no la "
+                    "mueve y devuelve needs_confirmation con esas etapas: pregunte al usuario "
+                    "si prefiere dejarla en una de ellas (move_task_stage) o resolverla "
+                    "(repita con skip_validation=true)."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "task_id": ID,
+                        "skip_validation": {
+                            "type": "boolean",
+                            "description": (
+                                "true si el usuario ya confirmó que desea resolverla "
+                                "sin pasar por las etapas de validación."
+                            ),
+                        },
+                    },
+                    "required": ["task_id"],
+                },
+                "annotations": {**WRITE, "idempotentHint": True},
+                "method": "_mcp_tool_close_task",
             },
             "log_time": {
                 "description": (
@@ -550,6 +584,59 @@ class ProjectMcpServerTools(models.AbstractModel):
             self._mcp_browse("project.task.unified.stage", unified_stage_id, _("etapa unificada"))
             task.write({"unified_stage_id": int(unified_stage_id)})
         return self._mcp_task_summary(task)
+
+    @api.model
+    def _mcp_pending_validation_stages(self, task):
+        """Validation stages of the task's project that come after its current stage."""
+        validation = self.env["project.task.unified.stage"]
+        for xmlid in VALIDATION_UNIFIED_STAGES:
+            validation |= self.env.ref(xmlid, raise_if_not_found=False) or validation
+        current = task.stage_id
+        return task.project_id.type_ids.sorted(lambda s: (s.sequence, s.id)).filtered(
+            lambda stage: stage.unified_stage_id in validation
+            and (not current or (stage.sequence, stage.id) > (current.sequence, current.id))
+        )
+
+    @api.model
+    def _mcp_resolved_stage(self, task):
+        """First "Resuelto" stage of the task's project."""
+        resolved = self.env.ref(RESOLVED_UNIFIED_STAGE, raise_if_not_found=False)
+        return task.project_id.type_ids.sorted(lambda s: (s.sequence, s.id)).filtered(
+            lambda stage: (resolved and stage.unified_stage_id == resolved)
+            or is_resolved_stage_name(stage.name)
+        )[:1]
+
+    @api.model
+    def _mcp_tool_close_task(self, task_id, skip_validation=False):
+        task = self._mcp_browse("project.task", task_id, _("tarea"))
+        resolved = self._mcp_resolved_stage(task)
+        if not resolved:
+            raise McpToolInputError(_(
+                "El proyecto %(project)s no tiene una etapa Resuelto ni un sinónimo. Etapas disponibles: "
+                "%(stages)s. Pregunte al usuario a cuál moverla (move_task_stage).",
+                project=task.project_id.display_name,
+                stages=", ".join(
+                    f"{stage.name} (id {stage.id})"
+                    for stage in task.project_id.type_ids.sorted("sequence")
+                ) or "-",
+            ))
+        if task.stage_id == resolved:
+            return {"closed": True, "task": self._mcp_task_summary(task)}
+        if not skip_validation:
+            pending = self._mcp_pending_validation_stages(task)
+            if pending:
+                return {
+                    "closed": False,
+                    "needs_confirmation": True,
+                    "message": _(
+                        "La tarea aún puede pasar por etapas de validación. Pregunte al "
+                        "usuario si desea dejarla en alguna de ellas o resolverla."
+                    ),
+                    "validation_stages": _refs(pending),
+                    "task": self._mcp_task_summary(task),
+                }
+        task.write({"stage_id": resolved.id})
+        return {"closed": True, "task": self._mcp_task_summary(task)}
 
     @api.model
     def _mcp_tool_log_time(

@@ -162,7 +162,9 @@ class ProjectMcpServer(models.AbstractModel):
             "instructions": _(
                 "Herramientas para consultar y operar proyectos, tareas, sprints "
                 "y registro de horas de Odoo. Las fechas con hora se expresan en "
-                "UTC. Todas las operaciones respetan los permisos del usuario."
+                "UTC. Todas las operaciones respetan los permisos del usuario. "
+                "Cuando el usuario pida cerrar, terminar, finalizar (o un sinónimo) "
+                "una tarea, use close_task."
             ),
         }
 
