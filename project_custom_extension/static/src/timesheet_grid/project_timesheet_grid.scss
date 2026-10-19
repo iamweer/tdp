@@ -9,7 +9,7 @@
     --o-ts-grid-today-bg: #{rgba($primary, 0.08)};
     --o-ts-grid-danger: #{$danger};
     --o-ts-grid-bar: #{rgba($primary, 0.45)};
-    --o-ts-grid-name-width: 260px;
+    --o-ts-grid-name-width: 340px;
 
     display: flex;
     flex-direction: column;
@@ -234,6 +234,17 @@
 .o_ts_grid_line_name {
     padding-left: 44px !important;
     font-weight: 400;
+}
+
+// Long project names wrap to a second line instead of being cut.
+.o_ts_grid_line_label {
+    display: -webkit-box;
+    overflow: hidden;
+    white-space: normal;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
 }
 
 .o_ts_grid_cell {

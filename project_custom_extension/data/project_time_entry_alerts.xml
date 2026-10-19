@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="mail_template_missing_hours_reminder" model="mail.template">
+        <field name="name">Horas: recordatorio semanal</field>
+        <field name="model_id" ref="base.model_res_users"/>
+        <field name="subject">Recuerda registrar tus horas de la semana {{ ctx.get('week_label') }}</field>
+        <field name="body_html" type="html">
+            <div>
+                <p>Hola <t t-out="object.name"/>,</p>
+                <p>Aún no tienes horas registradas en estos días de la semana
+                    <strong t-out="ctx.get('week_label')"/>:</p>
+                <p><strong t-out="ctx.get('missing_row', {}).get('days')"/></p>
+                <p>Llevas <t t-out="ctx.get('missing_row', {}).get('logged')"/> de
+                    <t t-out="ctx.get('missing_row', {}).get('expected')"/> horas esperadas.</p>
+                <p>
+                    <a t-att-href="ctx.get('grid_url')"
+                       style="background-color: #714B67; padding: 8px 16px; color: #fff; text-decoration: none; border-radius: 5px;">
+                        Registrar horas
+                    </a>
+                </p>
+            </div>
+        </field>
+        <field name="auto_delete" eval="True"/>
+    </record>
+
+    <record id="mail_template_missing_hours_summary" model="mail.template">
+        <field name="name">Horas: resumen semanal de faltantes</field>
+        <field name="model_id" ref="base.model_res_users"/>
+        <field name="subject">Horas sin registrar en la semana {{ ctx.get('week_label') }}</field>
+        <field name="body_html" type="html">
+            <div>
+                <p>Hola <t t-out="object.name"/>,</p>
+                <p>Estas son las personas de <t t-out="ctx.get('scope_label')"/> con días sin
+                    horas registradas en la semana <strong t-out="ctx.get('week_label')"/>:</p>
+                <table style="border-collapse: collapse; width: 100%;">
+                    <thead>
+                        <tr>
+                            <th style="border-bottom: 1px solid #ddd; padding: 6px; text-align: left;">Persona</th>
+                            <th style="border-bottom: 1px solid #ddd; padding: 6px; text-align: left;">Días sin horas</th>
+                            <th style="border-bottom: 1px solid #ddd; padding: 6px; text-align: right;">Registradas / esperadas</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr t-foreach="ctx.get('missing_rows', [])" t-as="row">
+                            <td style="border-bottom: 1px solid #eee; padding: 6px;" t-out="row['name']"/>
+                            <td style="border-bottom: 1px solid #eee; padding: 6px;" t-out="row['days']"/>
+                            <td style="border-bottom: 1px solid #eee; padding: 6px; text-align: right;">
+                                <t t-out="row['logged']"/> / <t t-out="row['expected']"/>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p style="margin-top: 16px;">
+                    <a t-att-href="ctx.get('grid_url')"
+                       style="background-color: #714B67; padding: 8px 16px; color: #fff; text-decoration: none; border-radius: 5px;">
+                        Ver registro de horas
+                    </a>
+                </p>
+            </div>
+        </field>
+        <field name="auto_delete" eval="True"/>
+    </record>
+
+    <!-- Viernes 3 p. m. y lunes 8 a. m. hora de Bogotá (UTC-5). Sin
+         actualización para que un -u no reprograme la próxima ejecución. -->
+    <data noupdate="1">
+    <record id="ir_cron_remind_missing_hours" model="ir.cron">
+        <field name="name">Horas: recordatorio semanal de registro</field>
+        <field name="model_id" ref="project_custom_extension.model_project_task_time_entry"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_remind_missing_hours()</field>
+        <field name="user_id" ref="base.user_root"/>
+        <field name="interval_number">1</field>
+        <field name="interval_type">weeks</field>
+        <field name="nextcall" eval="(DateTime.today() + relativedelta(weekday=4)).strftime('%Y-%m-%d 20:00:00')"/>
+        <field name="active" eval="True"/>
+    </record>
+
+    <record id="ir_cron_notify_missing_hours_summary" model="ir.cron">
+        <field name="name">Horas: resumen semanal de faltantes</field>
+        <field name="model_id" ref="project_custom_extension.model_project_task_time_entry"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_notify_missing_hours_summary()</field>
+        <field name="user_id" ref="base.user_root"/>
+        <field name="interval_number">1</field>
+        <field name="interval_type">weeks</field>
+        <field name="nextcall" eval="(DateTime.today() + relativedelta(weekday=0)).strftime('%Y-%m-%d 13:00:00')"/>
+        <field name="active" eval="True"/>
+    </record>
+    </data>
+</odoo>

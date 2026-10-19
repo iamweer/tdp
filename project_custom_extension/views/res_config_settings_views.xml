@@ -54,6 +54,19 @@
                             </div>
                         </div>
                     </setting>
+                    <setting id="project_schedule_risk_deviation"
+                             string="Semáforo del cronograma"
+                             help="Puntos por debajo del avance esperado (días transcurridos ÷ duración del proyecto) a partir de los cuales un proyecto sin vencimientos pasa a En riesgo.">
+                        <div class="content-group">
+                            <div class="row mt16">
+                                <label for="project_schedule_risk_deviation" class="col-lg-5 o_light_label"/>
+                                <div class="col-lg-7">
+                                    <field name="project_schedule_risk_deviation" class="oe_inline"/>
+                                    <span class="ms-1">pts</span>
+                                </div>
+                            </div>
+                        </div>
+                    </setting>
                 </block>
             </xpath>
         </field>

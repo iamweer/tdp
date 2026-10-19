@@ -52,8 +52,11 @@ COMPANY_TYPE_SELECTION = [
 ]
 
 # Puntos por debajo del avance esperado a partir de los que el cronograma
-# pasa a "En riesgo" (si aún no hay tareas ni hitos vencidos).
-SCHEDULE_RISK_DEVIATION = 5
+# pasa a "En riesgo" (si aún no hay tareas ni hitos vencidos). Configurable.
+SCHEDULE_RISK_DEVIATION_DEFAULT = 10
+SCHEDULE_RISK_DEVIATION_PARAMETER = (
+    "project_custom_extension.schedule_risk_deviation"
+)
 
 # Las tareas internas no cuentan para el avance, los contadores ni los reportes.
 VISIBLE_TASK_DOMAIN = [("is_internal_task", "=", False)]
@@ -559,6 +562,18 @@ class ProjectProject(models.Model):
         return configuration
 
     @api.model
+    def _get_schedule_risk_deviation(self):
+        # Fixed, non-sensitive key read like the health configuration above.
+        raw_value = self.env["ir.config_parameter"]._get_param(
+            SCHEDULE_RISK_DEVIATION_PARAMETER
+        )
+        try:
+            value = int(raw_value or SCHEDULE_RISK_DEVIATION_DEFAULT)
+        except (TypeError, ValueError):
+            return SCHEDULE_RISK_DEVIATION_DEFAULT
+        return value if 0 <= value <= 100 else SCHEDULE_RISK_DEVIATION_DEFAULT
+
+    @api.model
     def _get_dashboard_health(
         self,
         projects,
@@ -751,6 +766,20 @@ class ProjectProject(models.Model):
     @api.model
     def _empty_project_detail_dashboard_data(self):
         return {"project": False}
+
+    @api.model
+    def _dashboard_date_range(self, date_from, date_to):
+        """Valid ``(date_from, date_to)``; invalid or inverted values are ignored."""
+        def to_date(value):
+            try:
+                return fields.Date.to_date(value) if value else False
+            except (TypeError, ValueError):
+                return False
+
+        date_from, date_to = to_date(date_from), to_date(date_to)
+        if date_from and date_to and date_from > date_to:
+            return False, False
+        return date_from, date_to
 
     @api.model
     def _dashboard_integer_id(self, value):
@@ -1033,17 +1062,21 @@ class ProjectProject(models.Model):
         return reference_date
 
     @api.model
-    def _project_detail_reference_datetime(self, reference_date):
-        """UTC limit for deadlines: now for today, else the end of that day."""
-        if reference_date == fields.Date.context_today(self):
-            return fields.Datetime.now()
+    def _dashboard_local_day_start(self, day):
+        """UTC naive datetime at which ``day`` starts in the user's timezone."""
         timezone = pytz.timezone(
             self.env.context.get("tz") or self.env.user.tz or "UTC"
         )
-        local_limit = timezone.localize(
-            datetime.combine(reference_date + timedelta(days=1), time.min)
-        )
-        return local_limit.astimezone(pytz.utc).replace(tzinfo=None)
+        local_start = timezone.localize(datetime.combine(day, time.min))
+        return local_start.astimezone(pytz.utc).replace(tzinfo=None)
+
+    @api.model
+    def _project_detail_reference_datetime(self, reference_date):
+        """UTC limit for deadlines: the start of today, so tasks due today are
+        not overdue yet; for a past cutoff, the end of that day."""
+        if reference_date == fields.Date.context_today(self):
+            return self._dashboard_local_day_start(reference_date)
+        return self._dashboard_local_day_start(reference_date + timedelta(days=1))
 
     @api.model
     def _project_detail_local_date(self, value):
@@ -1064,7 +1097,7 @@ class ProjectProject(models.Model):
         - Late: overdue tasks or milestones (phases that should already be
           closed), or the end date passed with work still open.
         - At risk: nothing overdue yet, but real progress is more than
-          ``SCHEDULE_RISK_DEVIATION`` points below the expected one.
+          the configured deviation (points) below the expected one.
         - On time: otherwise.
 
         Expected progress is the share of the planned time elapsed and the
@@ -1104,7 +1137,7 @@ class ProjectProject(models.Model):
                 "fases para medir el avance esperado"
             )
         else:
-            if deviation < -SCHEDULE_RISK_DEVIATION:
+            if deviation < -self._get_schedule_risk_deviation():
                 key, label = "at_risk", _("En riesgo")
             else:
                 key, label = "on_time", _("A tiempo")
@@ -1324,6 +1357,12 @@ class ProjectProject(models.Model):
             "domain": [*base_domain, ("id", "child_of", item["task"].id)],
         } for item in milestones]
 
+        deliverables = self._project_detail_deliverables(
+            project,
+            [item["task"] for item in scoped_phases if item["task"].state != "1_canceled"],
+            reference_date,
+        )
+
         return {
             "project": {
                 "id": project.id,
@@ -1396,11 +1435,93 @@ class ProjectProject(models.Model):
                 "model": "project.task",
                 "domain": blocked_domain,
             },
+            "deliverables": deliverables,
         }
 
     @api.model
-    def get_project_dashboard_data(self, partner_id=False):
-        """Return the complete project dashboard payload for the current user."""
+    def _project_detail_deliverables(self, project, phases, reference_date):
+        """Compliance of the deliverables committed for each phase.
+
+        Overdue deliverables (pending with a commitment date before the
+        cutoff) are only reported: they do not change the schedule.
+        """
+        Deliverable = self.env["project.deliverable"]
+        phase_ids = [phase.id for phase in phases]
+        domain = [("project_id", "=", project.id), ("phase_id", "in", phase_ids)]
+        pending_domain = [*domain, ("state", "=", "pending")]
+        overdue_domain = [
+            *pending_domain,
+            ("date_commitment", "<", fields.Date.to_string(reference_date)),
+        ]
+        counts = {}
+        for phase, state, count in Deliverable._read_group(
+            domain, ["phase_id", "state"], ["__count"]
+        ):
+            counts.setdefault(phase.id, {})[state] = count
+
+        def percentage(done, total):
+            return round(done * 100 / total, 1) if total else 0.0
+
+        phase_items = []
+        for phase in phases:
+            done = counts.get(phase.id, {}).get("delivered", 0)
+            total = done + counts.get(phase.id, {}).get("pending", 0)
+            if not total:
+                continue
+            phase_items.append({
+                "id": phase.id,
+                "name": phase.display_name,
+                "done": done,
+                "total": total,
+                "percentage": percentage(done, total),
+                "model": "project.deliverable",
+                "domain": [("phase_id", "=", phase.id)],
+            })
+        done = sum(item["done"] for item in phase_items)
+        total = sum(item["total"] for item in phase_items)
+
+        items = []
+        for deliverable in Deliverable.search(
+            pending_domain,
+            order="date_commitment asc nulls last, sequence, id",
+            limit=5,
+        ):
+            overdue = bool(
+                deliverable.date_commitment
+                and deliverable.date_commitment < reference_date
+            )
+            items.append({
+                "id": deliverable.id,
+                "name": deliverable.name,
+                "phase": deliverable.phase_id.display_name,
+                "responsible": deliverable.user_id.name or _("Sin asignar"),
+                "deadline": fields.Date.to_string(deliverable.date_commitment)
+                if deliverable.date_commitment else False,
+                "status": "overdue" if overdue else "pending",
+                "status_label": _("Vencido") if overdue else _("Pendiente"),
+            })
+
+        return {
+            "done": done,
+            "total": total,
+            "percentage": percentage(done, total),
+            "overdue": Deliverable.search_count(overdue_domain),
+            "phases": phase_items,
+            "items": items,
+            "pending_count": total - done,
+            "model": "project.deliverable",
+            "domain": domain,
+            "pending_domain": pending_domain,
+            "overdue_domain": overdue_domain,
+        }
+
+    @api.model
+    def get_project_dashboard_data(self, partner_id=False, date_from=False, date_to=False):
+        """Return the complete project dashboard payload for the current user.
+
+        With a date range only the projects whose period (start → end)
+        overlaps it are shown; projects without those dates are left out.
+        """
         Project = self.env["project.project"]
         Task = self.env["project.task"]
         base_project_domain = [
@@ -1427,6 +1548,11 @@ class ProjectProject(models.Model):
         project_domain = list(base_project_domain)
         if partner_id:
             project_domain.append(("partner_id", "=", partner_id))
+        date_from, date_to = self._dashboard_date_range(date_from, date_to)
+        if date_to:
+            project_domain.append(("date_start", "<=", date_to))
+        if date_from:
+            project_domain.append(("date", ">=", date_from))
         projects = Project.search(project_domain)
 
         status_labels = dict(
@@ -1494,8 +1620,13 @@ class ProjectProject(models.Model):
         ]
         if partner_id:
             task_domain.append(("project_id.partner_id", "=", partner_id))
+        if date_from or date_to:
+            task_domain.append(("project_id", "in", projects.ids))
 
-        current_datetime = fields.Datetime.to_string(fields.Datetime.now())
+        # Tasks due today are not overdue until the day is over.
+        current_datetime = fields.Datetime.to_string(
+            self._dashboard_local_day_start(fields.Date.context_today(self))
+        )
         upcoming_datetime = fields.Datetime.to_string(
             fields.Datetime.now() + timedelta(days=7)
         )
@@ -1554,6 +1685,8 @@ class ProjectProject(models.Model):
                 "id": selected_partner.id,
                 "display_name": selected_partner.display_name,
             } if selected_partner else False,
+            "date_from": fields.Date.to_string(date_from) if date_from else False,
+            "date_to": fields.Date.to_string(date_to) if date_to else False,
             "kpis": kpis,
             "projects": project_rows,
             "project_action": {

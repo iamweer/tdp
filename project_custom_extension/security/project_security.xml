@@ -105,6 +105,28 @@
         <field name="groups" eval="[(4, ref('project_custom_extension.group_project_client'))]"/>
     </record>
 
+    <record id="project_deliverable_user_rule" model="ir.rule">
+        <field name="name">Entregables: Usuario opera proyectos accesibles</field>
+        <field name="model_id" ref="project_custom_extension.model_project_deliverable"/>
+        <field name="domain_force">[('project_id.active', '=', True), '|', ('project_id.create_uid', '=', user.id), ('project_id.tasks', 'any', [('active', '=', True), ('user_ids', 'in', user.id)])] if not user.has_group('project_custom_extension.group_project_client') else [('id', '=', 0)]</field>
+        <field name="groups" eval="[(4, ref('project.group_project_user'))]"/>
+    </record>
+    <record id="project_deliverable_manager_rule" model="ir.rule">
+        <field name="name">Entregables: Gerente administra todos los proyectos</field>
+        <field name="model_id" ref="project_custom_extension.model_project_deliverable"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('project.group_project_manager'))]"/>
+    </record>
+    <record id="project_deliverable_client_rule" model="ir.rule">
+        <field name="name">Entregables: Cliente consulta proyectos relacionados</field>
+        <field name="model_id" ref="project_custom_extension.model_project_deliverable"/>
+        <field name="domain_force">[('project_id.active', '=', True), ('phase_id.is_internal_task', '=', False), '|', ('project_id.partner_id.commercial_partner_id', '=', user.partner_id.commercial_partner_id.id), ('project_id.tasks', 'any', [('active', '=', True), ('is_internal_task', '=', False), ('user_ids', 'in', user.id)])]</field>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+        <field name="groups" eval="[(4, ref('project_custom_extension.group_project_client'))]"/>
+    </record>
+
     <record id="time_entry_user_own_rule" model="ir.rule">
         <field name="name">Horas: Usuario gestiona solo sus registros</field>
         <field name="model_id" ref="project_custom_extension.model_project_task_time_entry"/>

@@ -1,5 +1,7 @@
 from datetime import date
 
+from freezegun import freeze_time
+
 from odoo import Command, fields
 from odoo.exceptions import AccessError, ValidationError
 from odoo.tests import Form, TransactionCase, new_test_user, tagged
@@ -249,3 +251,102 @@ class TestProjectTaskTimeEntry(TransactionCase):
         self.assertEqual(
             [name for _id, name in data["filters"]["employees"]], ["Alice Horas"]
         )
+
+    def test_grid_by_customer(self):
+        self._grid_entries()
+        data = self.Entry.with_user(self.manager).get_time_grid_data(
+            "2026-01-05", "2026-01-11", "customer"
+        )
+        groups = {group["name"]: group for group in data["groups"]}
+        self.assertEqual(set(groups), {"Cliente registro horas", "Sin cliente"})
+        self.assertEqual(groups["Cliente registro horas"]["key"], self.customer.id)
+        self.assertEqual(
+            {line["name"]: line["total"] for line in groups["Cliente registro horas"]["lines"]},
+            {"Proyecto horas": 13},
+        )
+        self.assertEqual(
+            {line["name"]: line["total"] for line in groups["Sin cliente"]["lines"]},
+            {"Proyecto horas B": 1.5},
+        )
+
+    def _alert_mails(self, user):
+        return self.env["mail.mail"].search([("email_to", "=", user.email)])
+
+    def _setup_alert_users(self):
+        for user in (self.manager, self.alice, self.bob):
+            user.email = f"{user.login}@alertas.example.com"
+
+    def test_missing_hours_by_employee(self):
+        self._grid_entries()
+        with freeze_time("2026-01-09 21:00:00"):
+            missing = self.Entry.with_context(tz="America/Bogota")._time_entry_missing_hours(
+                self.alice_employee | self.bob_employee,
+                date(2026, 1, 5),
+                date(2026, 1, 11),
+            )
+        self.assertEqual(
+            missing[self.alice_employee]["missing_days"],
+            [date(2026, 1, 7), date(2026, 1, 8), date(2026, 1, 9)],
+        )
+        self.assertEqual(missing[self.alice_employee]["logged"], 11)
+        self.assertEqual(
+            missing[self.bob_employee]["missing_days"],
+            [date(2026, 1, 6), date(2026, 1, 8), date(2026, 1, 9)],
+        )
+
+        # Future days are not missing yet.
+        with freeze_time("2026-01-06 21:00:00"):
+            missing = self.Entry.with_context(tz="America/Bogota")._time_entry_missing_hours(
+                self.alice_employee, date(2026, 1, 5), date(2026, 1, 11)
+            )
+        self.assertFalse(missing)
+
+    def test_friday_reminder_goes_to_people_missing_hours(self):
+        self._setup_alert_users()
+        self._grid_entries()
+        for day in (7, 8, 9):
+            self._entry(self.alice, date=date(2026, 1, day), unit_amount=8)
+        with freeze_time("2026-01-09 20:00:00"):
+            self.Entry._cron_remind_missing_hours()
+
+        self.assertFalse(self._alert_mails(self.alice))
+        bob_mail = self._alert_mails(self.bob)
+        self.assertEqual(len(bob_mail), 1)
+        self.assertIn("05/01 – 09/01/2026", bob_mail.subject)
+        self.assertIn("mar 06/01, jue 08/01, vie 09/01", bob_mail.body_html)
+        self.assertTrue(self._alert_mails(self.manager))
+
+    def test_monday_summary_for_managers_and_project_pms(self):
+        self._setup_alert_users()
+        pm = new_test_user(
+            self.env,
+            login="time_entry_pm",
+            name="PM Horas",
+            email="time_entry_pm@alertas.example.com",
+            groups="project.group_project_user",
+        )
+        pm_project = self.env["project.project"].create({
+            "name": "Proyecto del PM",
+            "user_id": pm.id,
+        })
+        self.env["project.task"].create({
+            "name": "Tarea del PM",
+            "project_id": pm_project.id,
+            "user_ids": [Command.set([self.alice.id])],
+        })
+        self._grid_entries()
+        with freeze_time("2026-01-12 13:00:00"):
+            self.Entry._cron_notify_missing_hours_summary()
+
+        manager_mail = self._alert_mails(self.manager)
+        self.assertEqual(len(manager_mail), 1)
+        self.assertIn("05/01 – 11/01/2026", manager_mail.subject)
+        for name in ("Alice Horas", "Bob Horas", "Gerente Horas"):
+            self.assertIn(name, manager_mail.body_html)
+
+        pm_mail = self._alert_mails(pm)
+        self.assertEqual(len(pm_mail), 1)
+        self.assertIn("Alice Horas", pm_mail.body_html)
+        self.assertNotIn("Bob Horas", pm_mail.body_html)
+        # People without hours do not receive the summary.
+        self.assertFalse(self._alert_mails(self.alice))

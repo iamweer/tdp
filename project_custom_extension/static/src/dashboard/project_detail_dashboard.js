@@ -347,15 +347,17 @@ export class ProjectDetailDashboard extends Component {
         return this.action.doAction({
             type: "ir.actions.act_window",
             name: title || metric.name || this.project.name,
-            res_model: "project.task",
-            views: [[false, "list"], [false, "kanban"], [false, "form"]],
+            res_model: metric.model || "project.task",
+            views: metric.model === "project.deliverable"
+                ? [[false, "list"], [false, "form"]]
+                : [[false, "list"], [false, "kanban"], [false, "form"]],
             domain: metric.domain,
             context: { active_test: true },
         });
     }
 
-    openDomain(domain, title) {
-        return this.openMetric({ domain }, title);
+    openDomain(domain, title, model) {
+        return this.openMetric({ domain, model }, title);
     }
 
     openProjectTasks() {
@@ -388,11 +390,11 @@ export class ProjectDetailDashboard extends Component {
         });
     }
 
-    openTask(task) {
+    openTask(task, model = "project.task") {
         return this.action.doAction({
             type: "ir.actions.act_window",
             name: task.name,
-            res_model: "project.task",
+            res_model: model,
             res_id: task.id,
             views: [[false, "form"]],
         });

@@ -22,6 +22,8 @@ export class ProjectDashboard extends Component {
             data: false,
             customerIds: [],
             selectedCustomer: false,
+            dateFrom: "",
+            dateTo: "",
             loading: true,
             error: false,
         });
@@ -31,7 +33,12 @@ export class ProjectDashboard extends Component {
             write: false,
         };
         this.requestSequence = 0;
-        onWillStart(() => this.loadDashboard(this.getStoredCustomerId()));
+        onWillStart(() => {
+            const { partnerId, dateFrom, dateTo } = this.getStoredFilters();
+            this.state.dateFrom = dateFrom;
+            this.state.dateTo = dateTo;
+            return this.loadDashboard(partnerId);
+        });
     }
 
     get storageKey() {
@@ -46,23 +53,47 @@ export class ProjectDashboard extends Component {
         return Boolean(this.state.selectedCustomer);
     }
 
+    get hasDateFilter() {
+        return Boolean(this.state.dateFrom || this.state.dateTo);
+    }
+
     get gaugeNeedleTransform() {
         const score = this.state.data?.health?.score;
         const angle = score === false || score === undefined ? 180 : 180 + score * 1.8;
         return `rotate(${angle} 100 100)`;
     }
 
-    getStoredCustomerId() {
-        const storedValue = browser.localStorage.getItem(this.storageKey);
-        const partnerId = Number.parseInt(storedValue, 10);
-        return Number.isInteger(partnerId) && partnerId > 0 ? partnerId : false;
+    getStoredFilters() {
+        const filters = { partnerId: false, dateFrom: "", dateTo: "" };
+        try {
+            const storedValue = browser.localStorage.getItem(this.storageKey);
+            // Older versions stored only the customer id.
+            const parsed = JSON.parse(storedValue || "{}");
+            const stored = typeof parsed === "object" && parsed ? parsed : { partner_id: parsed };
+            const partnerId = Number.parseInt(stored.partner_id, 10);
+            const isDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || "");
+            filters.partnerId = Number.isInteger(partnerId) && partnerId > 0 ? partnerId : false;
+            filters.dateFrom = isDate(stored.date_from) ? stored.date_from : "";
+            filters.dateTo = isDate(stored.date_to) ? stored.date_to : "";
+        } catch {
+            // Storage is only a convenience.
+        }
+        return filters;
     }
 
-    storeCustomerId(partnerId) {
-        if (partnerId) {
-            browser.localStorage.setItem(this.storageKey, String(partnerId));
-        } else {
-            browser.localStorage.removeItem(this.storageKey);
+    storeFilters(partnerId) {
+        try {
+            if (partnerId || this.hasDateFilter) {
+                browser.localStorage.setItem(this.storageKey, JSON.stringify({
+                    partner_id: partnerId || false,
+                    date_from: this.state.dateFrom,
+                    date_to: this.state.dateTo,
+                }));
+            } else {
+                browser.localStorage.removeItem(this.storageKey);
+            }
+        } catch {
+            // Storage is only a convenience.
         }
     }
 
@@ -83,7 +114,11 @@ export class ProjectDashboard extends Component {
                 "project.project",
                 "get_project_dashboard_data",
                 [],
-                { partner_id: partnerId || false }
+                {
+                    partner_id: partnerId || false,
+                    date_from: this.state.dateFrom || false,
+                    date_to: this.state.dateTo || false,
+                }
             );
             if (requestSequence !== this.requestSequence) {
                 return;
@@ -91,7 +126,10 @@ export class ProjectDashboard extends Component {
             this.state.data = data;
             this.state.customerIds = data.customer_ids;
             this.state.selectedCustomer = data.selected_customer || false;
-            this.storeCustomerId(data.selected_customer?.id || false);
+            // The server drops invalid or inverted ranges.
+            this.state.dateFrom = data.date_from || "";
+            this.state.dateTo = data.date_to || "";
+            this.storeFilters(data.selected_customer?.id || false);
         } catch (error) {
             if (requestSequence !== this.requestSequence) {
                 return;
@@ -117,6 +155,17 @@ export class ProjectDashboard extends Component {
     async showAllCustomers() {
         this.state.selectedCustomer = false;
         await this.loadDashboard(false);
+    }
+
+    async onDateChange(field, event) {
+        this.state[field] = event.target.value || "";
+        await this.refreshDashboard();
+    }
+
+    async clearDates() {
+        this.state.dateFrom = "";
+        this.state.dateTo = "";
+        await this.refreshDashboard();
     }
 
     async refreshDashboard() {

@@ -14,6 +14,7 @@ from ..hooks import (
 from ..models.project_project import (
     DASHBOARD_HEALTH_DEFAULTS,
     DASHBOARD_HEALTH_PARAMETERS,
+    SCHEDULE_RISK_DEVIATION_PARAMETER,
     WARRANTY_ACTIVATION_PARAMETER,
     WARRANTY_VICTOR_LOGIN,
 )
@@ -794,11 +795,18 @@ class TestProjectDashboard(TransactionCase):
                 cutoff=cutoff,
             )["kpis"]["schedule"]
 
-        # Expected 60%, real 50%: behind, but nothing overdue yet.
+        # Expected 60%, real 50%: 10 points behind is still within the
+        # default deviation of 10 points.
         result = schedule()
-        self.assertEqual(result["key"], "at_risk")
+        self.assertEqual(result["key"], "on_time")
         self.assertEqual(result["expected"], 60.0)
         self.assertEqual(result["deviation"], -10.0)
+
+        # With a stricter deviation it is at risk, as nothing is overdue yet.
+        self.env["ir.config_parameter"].set_param(
+            SCHEDULE_RISK_DEVIATION_PARAMETER, 5
+        )
+        self.assertEqual(schedule()["key"], "at_risk")
 
         project.date = today + timedelta(days=60)
         self.assertEqual(schedule()["key"], "on_time")
@@ -837,6 +845,152 @@ class TestProjectDashboard(TransactionCase):
         previous_month = (start.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
         self.assertEqual(schedule(previous_month)["expected"], 0.0)
         self.assertEqual(schedule(previous_month)["key"], "on_time")
+
+    def test_dashboard_date_range_filters_projects_by_period(self):
+        Project = self.env["project.project"]
+        project_2025 = self._create_project(
+            "Proyecto 2025",
+            self.partner_a,
+            "on_track",
+            date_start=date(2025, 2, 1),
+            date=date(2025, 6, 30),
+        )
+        project_2026 = self._create_project(
+            "Proyecto 2026",
+            self.partner_a,
+            "at_risk",
+            date_start=date(2025, 12, 15),
+            date=date(2026, 12, 31),
+        )
+        task_2026 = self.env["project.task"].create({
+            "name": "Vencida 2026",
+            "project_id": project_2026.id,
+            "date_deadline": fields.Datetime.now() - timedelta(days=3),
+        })
+
+        # Scoped to the test customer: the database may hold real projects.
+        data = Project.get_project_dashboard_data(
+            self.partner_a.id,
+            date_from="2025-01-01",
+            date_to="2025-12-31",
+        )
+        self.assertEqual((data["date_from"], data["date_to"]), ("2025-01-01", "2025-12-31"))
+        project_ids = {row["id"] for row in data["projects"]}
+        # Both overlap 2025; projects without dates are left out.
+        self.assertEqual(project_ids, {project_2025.id, project_2026.id})
+        active = self._item_by_key(data["kpis"], "active")
+        self.assertEqual(active["count"], 2)
+        self.assertEqual(Project.search(active["domain"]), project_2025 | project_2026)
+
+        data = Project.get_project_dashboard_data(self.partner_a.id, date_from="2026-01-01")
+        self.assertEqual({row["id"] for row in data["projects"]}, {project_2026.id})
+        critical = self._item_by_key(data["alerts"], "critical")
+        self.assertEqual(self.env["project.task"].search(critical["domain"]), task_2026)
+
+        # An inverted or invalid range is ignored.
+        for date_from, date_to in (("2026-01-01", "2025-01-01"), ("bad", "worse")):
+            data = Project.get_project_dashboard_data(
+                self.partner_a.id, date_from=date_from, date_to=date_to
+            )
+            self.assertFalse(data["date_from"])
+            self.assertIn(self.on_track_project.id, {row["id"] for row in data["projects"]})
+
+    def test_project_detail_dashboard_task_due_today_is_not_overdue(self):
+        Project = self.env["project.project"]
+        today = fields.Date.context_today(Project)
+        project = self._create_project("Proyecto de hoy", self.partner_a, "on_track")
+        phase = self._create_weighted_task(project, "Fase", 100)
+        task = self._create_weighted_task(project, "Para hoy", parent=phase)
+        # Due today, at a time that has already passed.
+        day_start = Project._dashboard_local_day_start(today)
+        task.write({
+            "planned_date_begin": day_start - timedelta(days=3),
+            "date_deadline": day_start + timedelta(minutes=1),
+        })
+
+        data = Project.get_project_detail_dashboard_data(project.id)
+        self.assertEqual(data["kpis"]["overdue"]["count"], 0)
+        self.assertNotEqual(data["kpis"]["schedule"]["key"], "late")
+        self.assertEqual(data["commitments"]["items"][0]["status"], "at_risk")
+        alerts = Project.get_project_dashboard_data()["alerts"]
+        self.assertNotIn(
+            task,
+            self.env["project.task"].search(
+                self._item_by_key(alerts, "critical")["domain"]
+            ),
+        )
+
+        # Due yesterday, it is overdue.
+        task.date_deadline = day_start - timedelta(minutes=1)
+        data = Project.get_project_detail_dashboard_data(project.id)
+        self.assertEqual(data["kpis"]["overdue"]["count"], 1)
+        self.assertEqual(data["kpis"]["schedule"]["key"], "late")
+
+    def test_project_detail_dashboard_deliverables(self):
+        Project = self.env["project.project"]
+        Deliverable = self.env["project.deliverable"]
+        today = fields.Date.context_today(Project)
+        project = self._create_project(
+            "Proyecto con entregables",
+            self.partner_a,
+            "on_track",
+            date_start=today - timedelta(days=10),
+            date=today + timedelta(days=90),
+        )
+        first = self._create_weighted_task(project, "Análisis", 50)
+        second = self._create_weighted_task(project, "Construcción", 50)
+        subtask = self._create_weighted_task(project, "Subtarea", parent=first)
+        delivered = Deliverable.create({
+            "name": "Documento de requisitos",
+            "phase_id": first.id,
+            "state": "delivered",
+        })
+        overdue = Deliverable.create({
+            "name": "Mapa de procesos",
+            "phase_id": first.id,
+            "date_commitment": today - timedelta(days=1),
+        })
+        Deliverable.create({
+            "name": "Prototipo",
+            "phase_id": second.id,
+            "date_commitment": today + timedelta(days=5),
+        })
+        self.assertEqual(delivered.project_id, project)
+        self.assertEqual(delivered.date_delivered, today)
+        self.assertEqual(first.deliverable_ids, delivered | overdue)
+
+        with self.assertRaises(ValidationError):
+            Deliverable.create({"name": "En subtarea", "phase_id": subtask.id})
+
+        data = Project.get_project_detail_dashboard_data(project.id)
+        deliverables = data["deliverables"]
+        self.assertEqual(
+            (deliverables["done"], deliverables["total"], deliverables["overdue"]),
+            (1, 3, 1),
+        )
+        self.assertEqual(deliverables["percentage"], 33.3)
+        self.assertEqual(
+            [(item["id"], item["done"], item["total"]) for item in deliverables["phases"]],
+            [(first.id, 1, 2), (second.id, 0, 1)],
+        )
+        self.assertEqual(
+            [(item["name"], item["status"]) for item in deliverables["items"]],
+            [("Mapa de procesos", "overdue"), ("Prototipo", "pending")],
+        )
+        self.assertEqual(Deliverable.search(deliverables["overdue_domain"]), overdue)
+        # Overdue deliverables are only reported: the schedule is unaffected.
+        self.assertNotEqual(data["kpis"]["schedule"]["key"], "late")
+
+        # The phase filter narrows the deliverables.
+        phase_data = Project.get_project_detail_dashboard_data(
+            project.id,
+            phase_id=second.id,
+        )["deliverables"]
+        self.assertEqual((phase_data["done"], phase_data["total"]), (0, 1))
+
+        # Back to pending clears the delivery date.
+        delivered.state = "pending"
+        self.assertFalse(delivered.date_delivered)
 
     def test_project_detail_dashboard_schedule_matches_the_reference_case(self):
         """80% real, 96% expected, nothing overdue, ending tomorrow: at risk."""

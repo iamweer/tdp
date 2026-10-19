@@ -1,20 +1,29 @@
 from collections import defaultdict
 from datetime import datetime, time, timedelta
 
+import logging
+
 import pytz
 
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
 
-from .project_project import COMPANY_TYPE_SELECTION
+from .project_project import COMPANY_TYPE_SELECTION, WARRANTY_TIMEZONE
+
+_logger = logging.getLogger(__name__)
 
 MAX_GRID_DAYS = 62
+
+# Las alertas semanales de horas se calculan con el calendario de Colombia.
+TIME_ALERT_TIMEZONE = WARRANTY_TIMEZONE
+WEEKDAY_LABELS = ("lun", "mar", "mié", "jue", "vie", "sáb", "dom")
 
 # group_by -> (first level field, second level field)
 TIME_GRID_GROUPINGS = {
     "employee": ("employee_id", "project_id"),
     "project": ("project_id", "employee_id"),
     "company": ("company_type", "employee_id"),
+    "customer": ("partner_id", "project_id"),
 }
 
 
@@ -186,12 +195,14 @@ class ProjectTaskTimeEntry(models.Model):
         if group_by_field == "project_id":
             # The entry is readable, its project may not be (archived).
             return (value.id or 0, value.sudo().display_name or _("Sin proyecto"))
+        if group_by_field == "partner_id":
+            return (value.id or 0, value.sudo().display_name or _("Sin cliente"))
         return (value.id or 0, value.sudo().name or _("Sin empleado"))
 
     @api.model
     def _time_grid_expected_hours(self, employees, date_from, date_to):
         """Horas laborables por empleado y día según su calendario."""
-        tz = pytz.timezone(self.env.user.tz or "UTC")
+        tz = pytz.timezone(self.env.context.get("tz") or self.env.user.tz or "UTC")
         start = tz.localize(datetime.combine(date_from, time.min))
         end = tz.localize(datetime.combine(date_to, time.max))
         employees = employees.sudo().filtered(
@@ -398,3 +409,184 @@ class ProjectTaskTimeEntry(models.Model):
             "is_manager": is_manager,
             "today": fields.Date.to_string(today),
         }
+
+    # ------------------------------------------------------------------
+    # Alertas semanales de horas
+    # ------------------------------------------------------------------
+
+    @api.model
+    def _time_entry_missing_hours(self, employees, date_from, date_to):
+        """Empleados con días laborables sin horas entre las dos fechas.
+
+        Solo cuenta hasta hoy, con el calendario de cada empleado y la misma
+        regla que los días faltantes del reporte de horas. Devuelve
+        ``{employee: {"missing_days", "expected", "logged"}}``.
+        """
+        date_to = min(date_to, fields.Date.context_today(self))
+        if not employees or date_from > date_to:
+            return {}
+        expected = self._time_grid_expected_hours(employees, date_from, date_to)
+        logged = defaultdict(lambda: defaultdict(float))
+        for employee, day, hours in self.sudo()._read_group(
+            [
+                ("employee_id", "in", employees.ids),
+                ("date", ">=", date_from),
+                ("date", "<=", date_to),
+            ],
+            groupby=["employee_id", "date:day"],
+            aggregates=["unit_amount:sum"],
+        ):
+            logged[employee.id][fields.Date.to_date(day)] += hours
+
+        result = {}
+        for employee in employees:
+            expected_by_day = expected.get(employee.id)
+            if not expected_by_day:
+                continue
+            missing_days = sorted(
+                day for day, hours in expected_by_day.items()
+                if hours and not logged[employee.id].get(day)
+            )
+            if missing_days:
+                result[employee] = {
+                    "missing_days": missing_days,
+                    "expected": sum(expected_by_day.values()),
+                    "logged": sum(logged[employee.id].values()),
+                }
+        return result
+
+    @api.model
+    def _time_alert_row(self, employee, info):
+        def format_hours(value):
+            minutes = round(value * 60)
+            return f"{minutes // 60}:{minutes % 60:02d}"
+
+        return {
+            "name": employee.name,
+            "days": ", ".join(
+                f"{WEEKDAY_LABELS[day.weekday()]} {day.strftime('%d/%m')}"
+                for day in info["missing_days"]
+            ),
+            "logged": format_hours(info["logged"]),
+            "expected": format_hours(info["expected"]),
+        }
+
+    @api.model
+    def _time_alert_rows(self, missing):
+        return sorted(
+            (self._time_alert_row(employee, info) for employee, info in missing.items()),
+            key=lambda row: row["name"].lower(),
+        )
+
+    @api.model
+    def _time_alert_send(self, template, user, values):
+        """Encola el correo de la plantilla para un usuario; False si no tiene correo."""
+        email = user.email.strip() if user.email else False
+        if not email:
+            _logger.info("Alerta de horas sin enviar: %s no tiene correo.", user.login)
+            return False
+        template.with_context(**values).send_mail(
+            user.id,
+            force_send=False,
+            email_values={"email_to": email},
+        )
+        return True
+
+    @api.model
+    def _time_alert_grid_url(self):
+        base_url = self.env["ir.config_parameter"].sudo().get_param("web.base.url")
+        return f"{base_url}/odoo/action-project_custom_extension.action_project_timesheet_grid"
+
+    @api.model
+    def _cron_remind_missing_hours(self):
+        """Viernes: recuerda a cada persona los días de la semana sin horas."""
+        self = self.sudo().with_context(tz=TIME_ALERT_TIMEZONE)
+        today = fields.Date.context_today(self)
+        week_start = today - timedelta(days=today.weekday())
+        missing = self._time_entry_missing_hours(
+            self._time_grid_roster({}), week_start, today
+        )
+        template = self.env.ref(
+            "project_custom_extension.mail_template_missing_hours_reminder"
+        )
+        week_label = self._time_alert_week_label(week_start, today)
+        grid_url = self._time_alert_grid_url()
+        for employee, info in missing.items():
+            self._time_alert_send(template, employee.user_id, {
+                "missing_row": self._time_alert_row(employee, info),
+                "week_label": week_label,
+                "grid_url": grid_url,
+            })
+        return True
+
+    @api.model
+    def _time_alert_week_label(self, date_from, date_to):
+        return f"{date_from.strftime('%d/%m')} – {date_to.strftime('%d/%m/%Y')}"
+
+    @api.model
+    def _cron_notify_missing_hours_summary(self):
+        """Lunes: resumen de la semana anterior de quién no registró horas.
+
+        Los gerentes de proyecto reciben a todos; cada PM, solo a las
+        personas de sus proyectos (asignadas a tareas abiertas o con horas
+        en ellos esa semana).
+        """
+        self = self.sudo().with_context(tz=TIME_ALERT_TIMEZONE)
+        today = fields.Date.context_today(self)
+        week_start = today - timedelta(days=today.weekday() + 7)
+        week_end = week_start + timedelta(days=6)
+        missing = self._time_entry_missing_hours(
+            self._time_grid_roster({}), week_start, week_end
+        )
+        if not missing:
+            return True
+
+        template = self.env.ref(
+            "project_custom_extension.mail_template_missing_hours_summary"
+        )
+        week_label = self._time_alert_week_label(week_start, week_end)
+        grid_url = self._time_alert_grid_url()
+        manager_group = self.env.ref("project.group_project_manager")
+        managers = self.env["res.users"].search([
+            ("groups_id", "in", manager_group.ids),
+            ("share", "=", False),
+        ])
+        all_rows = self._time_alert_rows(missing)
+        for manager in managers:
+            self._time_alert_send(template, manager, {
+                "missing_rows": all_rows,
+                "week_label": week_label,
+                "grid_url": grid_url,
+                "scope_label": _("todo el equipo"),
+            })
+
+        Task = self.env["project.task"]
+        projects = self.env["project.project"].search([
+            ("active", "=", True),
+            ("last_update_status", "!=", "done"),
+            ("user_id", "!=", False),
+            ("user_id", "not in", managers.ids),
+        ])
+        for pm in projects.user_id:
+            pm_projects = projects.filtered(lambda project: project.user_id == pm)
+            assigned_users = Task.search([
+                ("project_id", "in", pm_projects.ids),
+                ("state", "in", Task.OPEN_STATES),
+            ]).user_ids
+            logged_employees = self.search([
+                ("project_id", "in", pm_projects.ids),
+                ("date", ">=", week_start),
+                ("date", "<=", week_end),
+            ]).employee_id
+            team = {
+                employee: info for employee, info in missing.items()
+                if employee.user_id in assigned_users or employee in logged_employees
+            }
+            if team:
+                self._time_alert_send(template, pm, {
+                    "missing_rows": self._time_alert_rows(team),
+                    "week_label": week_label,
+                    "grid_url": grid_url,
+                    "scope_label": _("las personas de tus proyectos"),
+                })
+        return True

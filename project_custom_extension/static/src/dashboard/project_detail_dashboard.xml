@@ -261,6 +261,81 @@
                         </section>
                     </div>
 
+                    <div t-if="state.data.deliverables" class="o_project_detail_dashboard_tables o_project_detail_dashboard_tables--spaced o_project_detail_dashboard_deliverables">
+                        <section class="o_project_detail_dashboard_card o_project_detail_dashboard_panel">
+                            <header class="o_project_detail_dashboard_panel_header">
+                                <h2><i class="fa fa-check-square-o" aria-hidden="true"/>Cumplimiento de entregables</h2>
+                                <button t-if="state.data.deliverables.total"
+                                        type="button"
+                                        class="btn btn-link o_project_detail_dashboard_see_all"
+                                        t-on-click="() => this.openMetric(state.data.deliverables, 'Entregables')">
+                                    <t t-out="state.data.deliverables.done"/>/<t t-out="state.data.deliverables.total"/> entregados · <t t-out="formatPercentage(state.data.deliverables.percentage)"/>%
+                                </button>
+                            </header>
+                            <div t-if="state.data.deliverables.phases.length" class="o_project_detail_dashboard_bars">
+                                <button t-foreach="state.data.deliverables.phases"
+                                        t-as="phase"
+                                        t-key="phase.id"
+                                        type="button"
+                                        class="o_project_detail_dashboard_bar_row"
+                                        t-att-title="phase.done + ' de ' + phase.total + ' entregables'"
+                                        t-on-click="() => this.openMetric(phase, 'Entregables de ' + phase.name)">
+                                    <span class="o_project_detail_dashboard_bar_label" t-out="phase.name"/>
+                                    <span class="o_project_detail_dashboard_track o_project_detail_dashboard_track--large">
+                                        <span t-attf-class="o_project_detail_dashboard_bar o_project_detail_dashboard_bar--#{getPhaseTone(phase.percentage)}"
+                                              t-att-style="getBarStyle(phase.percentage)"/>
+                                    </span>
+                                    <strong><t t-out="phase.done"/>/<t t-out="phase.total"/></strong>
+                                </button>
+                            </div>
+                            <p t-else="" class="o_project_detail_dashboard_empty_text">Las fases no tienen entregables registrados.</p>
+                        </section>
+
+                        <section class="o_project_detail_dashboard_card o_project_detail_dashboard_panel">
+                            <header class="o_project_detail_dashboard_panel_header">
+                                <h2><i class="fa fa-inbox" aria-hidden="true"/>Entregables pendientes</h2>
+                                <button t-if="state.data.deliverables.pending_count"
+                                        type="button"
+                                        class="btn btn-link o_project_detail_dashboard_see_all"
+                                        t-on-click="() => this.openDomain(state.data.deliverables.pending_domain, 'Entregables pendientes', 'project.deliverable')">
+                                    Ver todos (<t t-out="state.data.deliverables.pending_count"/>)<t t-if="state.data.deliverables.overdue"> · <t t-out="state.data.deliverables.overdue"/> vencido(s)</t> <i class="fa fa-arrow-right" aria-hidden="true"/>
+                                </button>
+                            </header>
+                            <div t-if="state.data.deliverables.items.length" class="o_project_detail_dashboard_table_wrap">
+                                <table class="o_project_detail_dashboard_table">
+                                    <thead>
+                                        <tr>
+                                            <th>Entregable</th>
+                                            <th>Fase</th>
+                                            <th>Fecha comprometida</th>
+                                            <th>Estado</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr t-foreach="state.data.deliverables.items"
+                                            t-as="deliverable"
+                                            t-key="deliverable.id"
+                                            t-on-click="() => this.openTask(deliverable, 'project.deliverable')">
+                                            <td>
+                                                <span t-out="deliverable.name"/>
+                                                <small class="d-block text-muted" t-out="deliverable.responsible"/>
+                                            </td>
+                                            <td t-out="deliverable.phase"/>
+                                            <td class="text-nowrap" t-out="formatDate(deliverable.deadline)"/>
+                                            <td>
+                                                <span t-attf-class="o_project_detail_dashboard_pill o_project_detail_dashboard_pill--#{deliverable.status}">
+                                                    <span class="o_project_detail_dashboard_dot"/>
+                                                    <t t-out="deliverable.status_label"/>
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p t-else="" class="o_project_detail_dashboard_empty_text">No hay entregables pendientes.</p>
+                        </section>
+                    </div>
+
                     <div class="o_project_detail_dashboard_tables">
                         <section class="o_project_detail_dashboard_card o_project_detail_dashboard_panel">
                             <header class="o_project_detail_dashboard_panel_header">

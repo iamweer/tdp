@@ -289,6 +289,10 @@ button.o_project_detail_dashboard_card {
     gap: 14px;
 }
 
+.o_project_detail_dashboard_tables--spaced {
+    margin-bottom: 16px;
+}
+
 .o_project_detail_dashboard_panel {
     display: flex;
     flex-direction: column;
@@ -518,6 +522,7 @@ button.o_project_detail_dashboard_card {
 }
 
 .o_project_detail_dashboard_pill--at_risk,
+.o_project_detail_dashboard_pill--pending,
 .o_project_detail_dashboard_pill--medium {
     --pill-color: var(--project-detail-amber);
 }

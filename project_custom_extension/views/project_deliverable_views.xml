@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="project_deliverable_view_list" model="ir.ui.view">
+        <field name="name">project.deliverable.list</field>
+        <field name="model">project.deliverable</field>
+        <field name="arch" type="xml">
+            <list string="Entregables"
+                  decoration-success="state == 'delivered'"
+                  decoration-danger="state == 'pending' and date_commitment and date_commitment &lt; current_date">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="project_id" optional="show"/>
+                <field name="phase_id"/>
+                <field name="user_id" optional="show" widget="many2one_avatar_user"/>
+                <field name="date_commitment"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'delivered'"
+                       decoration-warning="state == 'pending'"/>
+                <field name="date_delivered" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="project_deliverable_view_form" model="ir.ui.view">
+        <field name="name">project.deliverable.form</field>
+        <field name="model">project.deliverable</field>
+        <field name="arch" type="xml">
+            <form string="Entregable">
+                <header>
+                    <field name="state" widget="statusbar" options="{'clickable': '1'}"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="phase_id" options="{'no_create': True}"/>
+                            <field name="project_id" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="user_id" widget="many2one_avatar_user"/>
+                            <field name="date_commitment"/>
+                            <field name="date_delivered" invisible="state != 'delivered'"/>
+                        </group>
+                    </group>
+                    <field name="notes" placeholder="Notas"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="project_deliverable_view_search" model="ir.ui.view">
+        <field name="name">project.deliverable.search</field>
+        <field name="model">project.deliverable</field>
+        <field name="arch" type="xml">
+            <search string="Entregables">
+                <field name="name"/>
+                <field name="project_id"/>
+                <field name="phase_id"/>
+                <field name="user_id"/>
+                <filter name="pending" string="Pendientes" domain="[('state', '=', 'pending')]"/>
+                <filter name="delivered" string="Entregados" domain="[('state', '=', 'delivered')]"/>
+                <filter name="overdue" string="Vencidos"
+                        domain="[('state', '=', 'pending'), ('date_commitment', '&lt;', context_today().strftime('%Y-%m-%d'))]"/>
+                <group expand="0" string="Agrupar por">
+                    <filter name="group_project" string="Proyecto" context="{'group_by': 'project_id'}"/>
+                    <filter name="group_phase" string="Fase" context="{'group_by': 'phase_id'}"/>
+                    <filter name="group_state" string="Estado" context="{'group_by': 'state'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="project_deliverable_action" model="ir.actions.act_window">
+        <field name="name">Entregables</field>
+        <field name="res_model">project.deliverable</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <menuitem id="project_deliverable_menu"
+              name="Entregables"
+              parent="project.menu_main_pm"
+              action="project_deliverable_action"
+              sequence="39"
+              groups="project.group_project_user,project.group_project_manager"/>
+</odoo>

@@ -173,7 +173,11 @@ test("selecting a customer refreshes data and persists the valid selection", asy
     expect(requestedPartners).toEqual([false, 2]);
     expect(component.state.data.projects[0].name).toBe("Proyecto B");
     expect(component.state.selectedCustomer.id).toBe(2);
-    expect(browser.localStorage.getItem(component.storageKey)).toBe("2");
+    expect(JSON.parse(browser.localStorage.getItem(component.storageKey))).toEqual({
+        partner_id: 2,
+        date_from: "",
+        date_to: "",
+    });
 });
 
 test("drops an inaccessible persisted customer selection", async () => {

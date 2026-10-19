@@ -4,6 +4,8 @@ from odoo.exceptions import ValidationError
 from .project_project import (
     DASHBOARD_HEALTH_DEFAULTS,
     DASHBOARD_HEALTH_PARAMETERS,
+    SCHEDULE_RISK_DEVIATION_DEFAULT,
+    SCHEDULE_RISK_DEVIATION_PARAMETER,
 )
 
 
@@ -34,6 +36,11 @@ class ResConfigSettings(models.TransientModel):
         string="Umbral de atención",
         config_parameter=DASHBOARD_HEALTH_PARAMETERS["attention_threshold"],
         default=DASHBOARD_HEALTH_DEFAULTS["attention_threshold"],
+    )
+    project_schedule_risk_deviation = fields.Integer(
+        string="Desviación para En riesgo",
+        config_parameter=SCHEDULE_RISK_DEVIATION_PARAMETER,
+        default=SCHEDULE_RISK_DEVIATION_DEFAULT,
     )
 
     @api.constrains(
@@ -66,3 +73,11 @@ class ResConfigSettings(models.TransientModel):
                     "Los umbrales deben estar entre 0 y 100, y el umbral "
                     "saludable debe ser mayor que el umbral de atención."
                 ))
+
+    @api.constrains("project_schedule_risk_deviation")
+    def _check_project_schedule_risk_deviation(self):
+        for settings in self:
+            if not 0 <= settings.project_schedule_risk_deviation <= 100:
+                raise ValidationError(
+                    _("La desviación para En riesgo debe estar entre 0 y 100.")
+                )

@@ -25,6 +25,20 @@
                        groups="project.group_project_manager"/>
             </xpath>
             <xpath expr="//notebook/page[@name='description_page']" position="after">
+                <page name="deliverables_page" string="Entregables" invisible="parent_id">
+                    <field name="deliverable_ids">
+                        <list editable="bottom"
+                              decoration-success="state == 'delivered'"
+                              decoration-danger="state == 'pending' and date_commitment and date_commitment &lt; current_date">
+                            <field name="sequence" widget="handle"/>
+                            <field name="name"/>
+                            <field name="user_id" widget="many2one_avatar_user"/>
+                            <field name="date_commitment"/>
+                            <field name="state"/>
+                            <field name="date_delivered"/>
+                        </list>
+                    </field>
+                </page>
                 <page name="time_entries_page" string="Registro de horas" groups="project.group_project_user">
                     <field name="time_entry_ids">
                         <list editable="bottom">

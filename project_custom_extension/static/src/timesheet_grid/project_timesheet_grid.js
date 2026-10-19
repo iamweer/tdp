@@ -28,12 +28,14 @@ export const GROUP_BY_OPTIONS = [
     ["employee", _t("Empleado")],
     ["project", _t("Proyecto")],
     ["company", _t("Empresa")],
+    ["customer", _t("Cliente")],
 ];
 
 const SECOND_LEVEL_FIELD = {
     employee: "project_id",
     project: "employee_id",
     company: "employee_id",
+    customer: "project_id",
 };
 
 export function periodBounds(anchor, range) {
@@ -249,7 +251,9 @@ export class ProjectTimesheetGrid extends Component {
     }
 
     get secondLevelLabel() {
-        return this.state.data?.group_by === "employee" ? _t("proyecto") : _t("empleado");
+        return ["employee", "customer"].includes(this.state.data?.group_by)
+            ? _t("proyecto")
+            : _t("empleado");
     }
 
     formatHours(value) {
@@ -329,6 +333,7 @@ export class ProjectTimesheetGrid extends Component {
             employee: "employee_id",
             project: "project_id",
             company: "company_type",
+            customer: "partner_id",
         }[this.state.data.group_by];
         if (field === "company_type") {
             return [[field, "=", group.key === "none" ? false : group.key]];

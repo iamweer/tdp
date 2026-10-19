@@ -9,6 +9,35 @@
                         <h1>Estado General de Proyectos</h1>
                     </div>
                     <div class="o_project_dashboard_toolbar">
+                        <div class="o_project_dashboard_date_filter">
+                            <label for="project_dashboard_date_from">Periodo del proyecto</label>
+                            <div class="o_project_dashboard_date_control">
+                                <input id="project_dashboard_date_from"
+                                       type="date"
+                                       class="form-control"
+                                       aria-label="Desde"
+                                       title="Desde"
+                                       t-att-value="state.dateFrom"
+                                       t-att-max="state.dateTo or undefined"
+                                       t-on-change="(ev) => this.onDateChange('dateFrom', ev)"/>
+                                <span class="o_project_dashboard_date_separator">–</span>
+                                <input type="date"
+                                       class="form-control"
+                                       aria-label="Hasta"
+                                       title="Hasta"
+                                       t-att-value="state.dateTo"
+                                       t-att-min="state.dateFrom or undefined"
+                                       t-on-change="(ev) => this.onDateChange('dateTo', ev)"/>
+                                <button t-if="hasDateFilter"
+                                        type="button"
+                                        class="btn btn-link o_project_dashboard_clear_dates"
+                                        t-on-click="clearDates"
+                                        title="Quitar el filtro de fechas"
+                                        aria-label="Quitar el filtro de fechas">
+                                    <i class="fa fa-times" aria-hidden="true"/>
+                                </button>
+                            </div>
+                        </div>
                         <div class="o_project_dashboard_customer_filter">
                             <label for="project_dashboard_customer">Cliente</label>
                             <div class="o_project_dashboard_customer_control">

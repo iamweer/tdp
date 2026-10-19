@@ -123,7 +123,7 @@
                                     <span class="o_ts_grid_avatar"
                                           t-attf-style="background-color: #{avatarColor(group.key)}"
                                           t-out="initial(group.name)"/>
-                                    <span class="o_ts_grid_group_name" t-out="group.name"/>
+                                    <span class="o_ts_grid_group_name" t-att-title="group.name" t-out="group.name"/>
                                 </button>
                                 <span t-if="group.company_type" class="o_ts_grid_badge" t-out="companyLabel(group.company_type)"/>
                                 <span t-if="group.balance !== false"
@@ -144,7 +144,9 @@
                         </tr>
                         <t t-if="!isCollapsed(group)">
                             <tr t-foreach="group.lines" t-as="line" t-key="line.key" class="o_ts_grid_line_row">
-                                <th scope="row" class="o_ts_grid_name_col o_ts_grid_line_name" t-out="line.name"/>
+                                <th scope="row" class="o_ts_grid_name_col o_ts_grid_line_name" t-att-title="line.name">
+                                    <span class="o_ts_grid_line_label" t-out="line.name"/>
+                                </th>
                                 <td t-foreach="days" t-as="day" t-key="day.date"
                                     t-attf-class="o_ts_grid_cell #{lineCellClass(line, day)}"
                                     t-on-click="() => this.openEntries({ group, line, day })">
