@@ -12,6 +12,7 @@ import { defineMailModels } from "@mail/../tests/mail_test_helpers";
 import {
     buildProjectGanttCsv,
     ProjectGantt,
+    STATUS_COLORS,
 } from "../src/gantt/project_gantt";
 
 defineMailModels();
@@ -29,6 +30,8 @@ function makeData(projectId = 10) {
         rows: [
             {
                 id: 1,
+                status: "late",
+                status_label: "Retrasada",
                 name: "1. Análisis",
                 parent_id: false,
                 depth: 0,
@@ -41,6 +44,8 @@ function makeData(projectId = 10) {
             },
             {
                 id: 2,
+                status: "late",
+                status_label: "Retrasada",
                 name: "Levantamiento",
                 parent_id: 1,
                 depth: 1,
@@ -53,6 +58,8 @@ function makeData(projectId = 10) {
             },
             {
                 id: 3,
+                status: "no_dates",
+                status_label: "Sin fechas",
                 name: "Actividad sin fecha",
                 parent_id: 1,
                 depth: 1,
@@ -65,6 +72,8 @@ function makeData(projectId = 10) {
             },
             {
                 id: 4,
+                status: "on_time",
+                status_label: "A tiempo",
                 name: "2. Diseño",
                 parent_id: false,
                 depth: 0,
@@ -75,6 +84,14 @@ function makeData(projectId = 10) {
                 root_id: 4,
                 color_index: 1,
             },
+        ],
+        status_summary: [
+            { key: "late", label: "Retrasada", count: 2 },
+            { key: "at_risk", label: "En riesgo de atraso", count: 0 },
+            { key: "on_time", label: "A tiempo", count: 1 },
+            { key: "no_dates", label: "Sin fechas", count: 1 },
+            { key: "done", label: "Completada", count: 0 },
+            { key: "canceled", label: "Cancelada", count: 0 },
         ],
         total: {
             start_date: "2026-09-01",
@@ -170,6 +187,27 @@ describe("cronograma Gantt de proyectos", () => {
         expect(geometry.width).toBeGreaterThan(0);
     });
 
+    test("shows the status of each task with colors, a legend and the overdue time", async () => {
+        mockService("orm", { call: () => makeData() });
+        const component = await mountWithCleanup(ProjectGantt, {
+            noMainContainer: true,
+            props: { action: { context: { project_id: 10 } } },
+        });
+        await animationFrame();
+
+        expect(".o_project_gantt_status--late").toHaveCount(2);
+        expect(".o_project_gantt_status--on_time").toHaveCount(1);
+        expect(".o_project_gantt_bar--late").toHaveCount(2);
+        expect(".o_project_gantt_legend_item--late strong").toHaveText("2");
+        expect(".o_project_gantt_legend_item--at_risk").toHaveCount(0);
+        expect(component.barStyle(component.allRows[1])).toInclude(
+            `background-color: ${STATUS_COLORS.late}`
+        );
+        // Levantamiento ended on 03/09 and today is 23/09: overdue tail.
+        expect(component.overdueTailStyle(component.allRows[1])).toInclude("width:");
+        expect(component.overdueTailStyle(component.allRows[3])).toBe(false);
+    });
+
     test("validates filters and sends only the applied range", async () => {
         mockService("orm", {
             call(model, method, args, kwargs) {
@@ -242,7 +280,8 @@ describe("cronograma Gantt de proyectos", () => {
         });
 
         const csv = buildProjectGanttCsv(component.visibleRows, component.total);
-        expect(csv).toInclude('"Actividad";"Inicio";"Fin";"Duración"');
+        expect(csv).toInclude('"Actividad";"Inicio";"Fin";"Duración";"Estado"');
+        expect(csv).toInclude('"Levantamiento";"01/09/2026";"03/09/2026";"3 días";"Retrasada"');
         expect(csv).toInclude("Levantamiento");
         expect(csv).toInclude("Total del proyecto");
         expect(csv).toInclude("01/09/2026");

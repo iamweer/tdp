@@ -322,7 +322,7 @@
 
 .o_project_dashboard_project_row {
     display: grid;
-    grid-template-columns: 10px minmax(140px, 0.9fr) minmax(140px, 1.6fr) 44px 10px;
+    grid-template-columns: 10px minmax(140px, 0.9fr) minmax(140px, 1.6fr) 72px 10px;
     align-items: center;
     width: 100%;
     gap: 10px;
@@ -387,8 +387,12 @@
     }
 }
 
+.o_project_dashboard_project_dates .fa {
+    margin-right: 4px;
+}
+
 .o_project_dashboard_progress_track {
-    overflow: hidden;
+    position: relative;
     height: 10px;
     border-radius: 999px;
     background: #e8ecf2;
@@ -412,8 +416,30 @@
     background: linear-gradient(90deg, #d91f2e, #ef4b55);
 }
 
+// Avance esperado según las fechas del proyecto.
+.o_project_dashboard_progress_expected {
+    position: absolute;
+    top: -4px;
+    width: 3px;
+    height: 18px;
+    border-radius: 2px;
+    background: var(--project-dashboard-ink);
+    box-shadow: 0 0 0 1px #fff;
+    transform: translateX(-50%);
+}
+
 .o_project_dashboard_progress_value {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    line-height: 1.2;
     text-align: right;
+}
+
+.o_project_dashboard_progress_expected_value {
+    color: var(--project-dashboard-muted);
+    font-size: 0.75rem;
+    white-space: nowrap;
 }
 
 .o_project_dashboard_alerts {
@@ -749,7 +775,7 @@
     }
 
     .o_project_dashboard_project_row {
-        grid-template-columns: 10px 1fr 48px 10px;
+        grid-template-columns: 10px 1fr 72px 10px;
 
         .o_project_dashboard_progress_track {
             grid-column: 2 / 5;

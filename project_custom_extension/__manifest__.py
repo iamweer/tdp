@@ -43,6 +43,9 @@
             "project_custom_extension/static/src/timesheet_grid/project_timesheet_grid.xml",
             "project_custom_extension/static/src/timesheet_grid/project_timesheet_grid.scss",
         ],
+        "web.assets_tests": [
+            "project_custom_extension/static/tests/tours/*.js",
+        ],
         "web.assets_unit_tests": [
             "project_custom_extension/static/tests/project_dashboard.test.js",
             "project_custom_extension/static/tests/project_detail_dashboard.test.js",

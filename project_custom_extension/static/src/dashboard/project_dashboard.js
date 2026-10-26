@@ -101,6 +101,14 @@ export class ProjectDashboard extends Component {
         return [["id", "in", this.state.customerIds]];
     }
 
+    formatDate(value) {
+        if (!value) {
+            return _t("Sin fecha");
+        }
+        const [year, month, day] = value.split("-");
+        return `${day}/${month}/${year}`;
+    }
+
     formatPercentage(value) {
         return Math.round(value);
     }

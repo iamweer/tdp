@@ -194,10 +194,16 @@
                                         t-as="phase"
                                         t-key="phase.id"
                                         type="button"
-                                        t-attf-class="o_project_detail_dashboard_bar_row #{phase.selected ? 'o_project_detail_dashboard_bar_row--selected' : ''}"
-                                        t-att-title="phase.completed + ' de ' + phase.total + ' tareas · peso ' + phase.weight + '%'"
+                                        t-attf-class="o_project_detail_dashboard_bar_row o_project_detail_dashboard_bar_row--dated #{phase.selected ? 'o_project_detail_dashboard_bar_row--selected' : ''}"
+                                        t-att-title="phase.completed + ' de ' + phase.total + ' tareas · peso ' + phase.weight + '% · ' + formatDate(phase.start_date) + ' → ' + formatDate(phase.end_date)"
                                         t-on-click="() => this.openMetric(phase)">
-                                    <span class="o_project_detail_dashboard_bar_label" t-out="phase.name"/>
+                                    <span class="o_project_detail_dashboard_bar_label o_project_detail_dashboard_bar_label--dated">
+                                        <span t-out="phase.name"/>
+                                        <small class="o_project_detail_dashboard_phase_dates">
+                                            <i class="fa fa-calendar-o" aria-hidden="true"/>
+                                            <t t-out="formatDate(phase.start_date)"/> → <t t-out="formatDate(phase.end_date)"/>
+                                        </small>
+                                    </span>
                                     <span class="o_project_detail_dashboard_track o_project_detail_dashboard_track--large">
                                         <span t-attf-class="o_project_detail_dashboard_bar o_project_detail_dashboard_bar--#{getPhaseTone(phase.percentage)}"
                                               t-att-style="getBarStyle(phase.percentage)"/>

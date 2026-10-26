@@ -33,7 +33,7 @@ function makeData(projectId = 10) {
         },
         kpis: {
             progress: { percentage: 68, completed: 17, total: 25, domain: [["id", "=", 1]] },
-            schedule: { key: "at_risk", label: "En riesgo", detail: "Esperado 78% · real 68% · desviación -10 pts" },
+            schedule: { key: "at_risk", label: "En riesgo de atraso", detail: "Esperado 78% · real 68% · desviación -10 pts" },
             overdue: { count: 7, domain: [["id", "=", 2]] },
             milestones: { done: 8, total: 10, domain: [["id", "=", 3]] },
             blockers: { count: 2, domain: [["id", "=", 4]] },
@@ -45,6 +45,8 @@ function makeData(projectId = 10) {
             weight: 30,
             completed: 9,
             total: 10,
+            start_date: "2026-02-01",
+            end_date: "2026-04-30",
             selected: false,
             domain: [["id", "child_of", 51]],
         }],
@@ -146,6 +148,7 @@ describe("detalle de proyecto", () => {
         expect(".o_project_detail_dashboard_table tbody tr").toHaveCount(2);
         expect(".o_project_detail_dashboard_pill--high").toHaveCount(1);
         expect(".o_project_detail_dashboard_bar_row").toHaveCount(3);
+        expect(".o_project_detail_dashboard_phase_dates").toHaveText("01/02/2026 → 30/04/2026");
     });
 
     test("shows a message when no project matches the filters", async () => {

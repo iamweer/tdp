@@ -1,5 +1,6 @@
 from datetime import date
 
+from freezegun import freeze_time
 from lxml import etree
 
 from odoo.exceptions import ValidationError
@@ -124,6 +125,39 @@ class TestProjectGantt(TransactionCase):
         self.assertEqual(data["total"]["start_date"], "2026-09-01")
         self.assertEqual(data["total"]["end_date"], "2026-11-30")
         self.assertEqual(data["total"]["duration_days"], 91)
+
+    def test_rows_include_schedule_status_and_parents_show_the_worst_one(self):
+        self.outside_task.write({"state": "1_done"})
+        with freeze_time("2026-09-04 12:00:00"):
+            data = self.Project.get_project_gantt_data(self.project.id)
+        rows_by_name = {row["name"]: row for row in data["rows"]}
+
+        self.assertEqual(rows_by_name["Levantamiento"]["status"], "late")
+        self.assertEqual(rows_by_name["Levantamiento"]["status_label"], "Retrasada")
+        self.assertEqual(rows_by_name["Entrevistas"]["status"], "at_risk")
+        self.assertEqual(
+            rows_by_name["Entrevistas"]["status_label"],
+            "En riesgo de atraso",
+        )
+        self.assertEqual(
+            rows_by_name["Actividad sin fecha completa"]["status"],
+            "no_dates",
+        )
+        self.assertEqual(rows_by_name["2. Desarrollo"]["status"], "on_time")
+        self.assertEqual(rows_by_name["Actividad fuera del filtro"]["status"], "done")
+        # Its own deadline is a week away, but a subtask is already late.
+        self.assertEqual(rows_by_name["1. Análisis"]["status"], "late")
+        self.assertEqual(
+            {item["key"]: item["count"] for item in data["status_summary"]},
+            {
+                "late": 1,
+                "at_risk": 1,
+                "on_time": 2,
+                "no_dates": 1,
+                "done": 1,
+                "canceled": 0,
+            },
+        )
 
     def test_filter_uses_overlap_and_keeps_ancestors_and_incomplete_rows(self):
         data = self.Project.get_project_gantt_data(

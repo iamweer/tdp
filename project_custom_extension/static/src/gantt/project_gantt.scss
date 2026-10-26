@@ -2,10 +2,12 @@
     --project-gantt-activity-width: 320px;
     --project-gantt-date-width: 104px;
     --project-gantt-duration-width: 96px;
+    --project-gantt-status-width: 150px;
     --project-gantt-fixed-width: calc(
         var(--project-gantt-activity-width) +
         (var(--project-gantt-date-width) * 2) +
-        var(--project-gantt-duration-width)
+        var(--project-gantt-duration-width) +
+        var(--project-gantt-status-width)
     );
     --project-gantt-border: #dfe4eb;
     --project-gantt-muted: #697386;
@@ -351,6 +353,7 @@
         var(--project-gantt-date-width)
         var(--project-gantt-date-width)
         var(--project-gantt-duration-width)
+        var(--project-gantt-status-width)
         var(--project-gantt-timeline-width);
     min-width: max-content;
 }
@@ -403,6 +406,15 @@
     left: calc(
         var(--project-gantt-activity-width) +
         (var(--project-gantt-date-width) * 2)
+    );
+}
+
+.o_project_gantt_status_header,
+.o_project_gantt_status_cell {
+    left: calc(
+        var(--project-gantt-activity-width) +
+        (var(--project-gantt-date-width) * 2) +
+        var(--project-gantt-duration-width)
     );
 }
 
@@ -616,6 +628,106 @@
     clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%);
 }
 
+// Estado de las tareas ------------------------------------------------------
+
+.o_project_gantt_status_cell {
+    font-size: 0.73rem;
+}
+
+.o_project_gantt_status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #f1f3f6;
+    color: #455064;
+    font-weight: 600;
+}
+
+.o_project_gantt_status--late {
+    background: #fde8ea;
+    color: #b0212d;
+}
+
+.o_project_gantt_status--at_risk {
+    background: #fdf3dc;
+    color: #8a5a00;
+}
+
+.o_project_gantt_status--on_time {
+    background: #e4f5ea;
+    color: #1e7a41;
+}
+
+.o_project_gantt_status--done,
+.o_project_gantt_status--canceled {
+    color: #6b7485;
+}
+
+.o_project_gantt_status_dot {
+    flex: 0 0 8px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.o_project_gantt_bar--done,
+.o_project_gantt_bar--canceled {
+    opacity: 0.55;
+}
+
+.o_project_gantt_overdue_tail {
+    position: absolute;
+    z-index: 4;
+    top: 50%;
+    height: 8px;
+    border-radius: 0 4px 4px 0;
+    background: repeating-linear-gradient(
+        -45deg,
+        rgba(217, 45, 58, 0.55) 0 4px,
+        rgba(217, 45, 58, 0.15) 4px 8px
+    );
+    transform: translateY(-50%);
+}
+
+.o_project_gantt_legend {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 14px;
+    margin-bottom: 8px;
+    color: #455064;
+    font-size: 0.74rem;
+}
+
+.o_project_gantt_legend_title {
+    color: var(--project-gantt-muted);
+    font-weight: 700;
+}
+
+.o_project_gantt_legend_item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+
+    strong {
+        color: var(--project-gantt-ink);
+    }
+}
+
+.o_project_gantt_legend_tail {
+    width: 18px;
+    height: 8px;
+    border-radius: 2px;
+    background: repeating-linear-gradient(
+        -45deg,
+        rgba(217, 45, 58, 0.55) 0 4px,
+        rgba(217, 45, 58, 0.15) 4px 8px
+    );
+}
+
 .o_project_gantt_total_bar {
     height: 10px;
     background: #8791a1 !important;
@@ -696,6 +808,7 @@
         --project-gantt-activity-width: 240px;
         --project-gantt-date-width: 92px;
         --project-gantt-duration-width: 82px;
+        --project-gantt-status-width: 130px;
     }
 
     .o_project_gantt_topbar,

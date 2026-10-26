@@ -42,7 +42,7 @@ function makePayload({ partner = false, activeCount = 2, projectName = "Proyecto
             },
             {
                 key: "at_risk",
-                title: "En riesgo",
+                title: "En riesgo de atraso",
                 icon: "fa-exclamation-triangle",
                 count: 1,
                 model: "project.project",
@@ -62,8 +62,10 @@ function makePayload({ partner = false, activeCount = 2, projectName = "Proyecto
             name: projectName,
             customer_name: partner ? `Cliente ${partner === 1 ? "A" : "B"}` : "Cliente A",
             progress: 50,
+            expected_progress: 62.5,
             status: "on_track",
             status_label: "En tiempo",
+            start_date: "2026-01-10",
             deadline: false,
         }],
         project_action: {
@@ -145,6 +147,10 @@ test("renders the dashboard and opens KPI records in list view", async () => {
     expect(".o_project_dashboard_kpi").toHaveCount(4);
     expect(".o_project_dashboard_refresh").toHaveCount(0);
     expect(".o_project_dashboard_project_row").toHaveCount(1);
+    expect(".o_project_dashboard_project_dates").toHaveText("10/01/2026 → Sin fecha");
+    expect(".o_project_dashboard_progress_expected").toHaveCount(1);
+    expect(".o_project_dashboard_progress_expected").toHaveAttribute("title", "Esperado 63%");
+    expect(".o_project_dashboard_progress_expected_value").toHaveText("Esp. 63%");
     expect(".o_project_dashboard_health_result strong").toHaveText("78%");
     expect(".o_project_dashboard_health_result span").toHaveText("Saludable");
     document.querySelector(".o_project_dashboard_kpi--active").click();

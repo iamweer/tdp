@@ -16,6 +16,7 @@ from ..models.project_project import (
     DASHBOARD_HEALTH_PARAMETERS,
     SCHEDULE_RISK_DEVIATION_PARAMETER,
     WARRANTY_ACTIVATION_PARAMETER,
+    WARRANTY_TIMEZONE,
     WARRANTY_VICTOR_LOGIN,
 )
 from ..models.project_task import is_resolved_stage_name
@@ -1014,7 +1015,7 @@ class TestProjectDashboard(TransactionCase):
         self.assertEqual(result["expected"], 96.0)
         self.assertEqual(result["deviation"], -16.0)
         self.assertEqual(result["key"], "at_risk")
-        self.assertEqual(result["label"], "En riesgo")
+        self.assertEqual(result["label"], "En riesgo de atraso")
 
     def test_project_detail_dashboard_schedule_without_planning(self):
         project = self._create_project("Proyecto sin fechas", self.partner_a, "on_track")
@@ -1263,6 +1264,66 @@ class TestProjectDashboard(TransactionCase):
         self.assertEqual(phase_detail["kpis"]["progress"]["percentage"], 40.0)
         self.assertEqual(phase_detail["kpis"]["progress"]["completed"], 2)
         self.assertEqual(phase_detail["kpis"]["progress"]["total"], 5)
+
+    def test_dashboards_include_project_and_phase_dates_and_expected_progress(self):
+        today = fields.Date.context_today(self.env["project.project"])
+        project = self._create_project(
+            "Proyecto con fechas",
+            self.partner_a,
+            "at_risk",
+            date_start=today - timedelta(days=30),
+            date=today + timedelta(days=70),
+        )
+        phase = self._create_weighted_task(project, "Fase con fechas", 100)
+        phase.write({
+            "planned_date_begin": fields.Datetime.to_datetime(
+                today - timedelta(days=10)
+            ).replace(hour=12),
+            "date_deadline": fields.Datetime.to_datetime(
+                today + timedelta(days=20)
+            ).replace(hour=12),
+        })
+
+        dashboard = self.env["project.project"].get_project_dashboard_data(
+            self.partner_a.id,
+        )
+        project_row = next(
+            row for row in dashboard["projects"] if row["id"] == project.id
+        )
+        self.assertEqual(
+            project_row["start_date"],
+            fields.Date.to_string(today - timedelta(days=30)),
+        )
+        self.assertEqual(
+            project_row["deadline"],
+            fields.Date.to_string(today + timedelta(days=70)),
+        )
+        self.assertEqual(project_row["expected_progress"], 30.0)
+        self.assertEqual(project_row["status_label"], "En riesgo de atraso")
+        self.assertEqual(
+            self._item_by_key(dashboard["kpis"], "at_risk")["title"],
+            "En Riesgo de Atraso",
+        )
+        no_dates_row = next(
+            row for row in dashboard["projects"]
+            if row["id"] == self.at_risk_project.id
+        )
+        self.assertFalse(no_dates_row["expected_progress"])
+
+        detail = self.env["project.project"].get_project_detail_dashboard_data(
+            project.id,
+        )
+        phase_row = next(
+            item for item in detail["phase_progress"] if item["id"] == phase.id
+        )
+        self.assertEqual(
+            phase_row["start_date"],
+            fields.Date.to_string(today - timedelta(days=10)),
+        )
+        self.assertEqual(
+            phase_row["end_date"],
+            fields.Date.to_string(today + timedelta(days=20)),
+        )
 
     def test_project_progress_ignores_canceled_and_splits_nested_subtasks(self):
         project = self._create_project(
@@ -1547,7 +1608,10 @@ class TestProjectDashboard(TransactionCase):
             task.write({"sprint_id": sprint.id})
 
     def test_warranty_cron_closes_due_projects_and_notifies_once(self):
-        today = fields.Date.context_today(self.env["project.project"])
+        # Same day as the cron, which runs in Colombia time.
+        today = fields.Date.context_today(
+            self.env["project.project"].with_context(tz=WARRANTY_TIMEZONE)
+        )
         parameters = self.env["ir.config_parameter"]
         parameters.set_param(
             WARRANTY_ACTIVATION_PARAMETER,
@@ -1628,7 +1692,10 @@ class TestProjectDashboard(TransactionCase):
         )
 
     def test_warranty_cron_closes_when_recipients_are_missing_and_logs_them(self):
-        today = fields.Date.context_today(self.env["project.project"])
+        # Same day as the cron, which runs in Colombia time.
+        today = fields.Date.context_today(
+            self.env["project.project"].with_context(tz=WARRANTY_TIMEZONE)
+        )
         self.env["ir.config_parameter"].set_param(
             WARRANTY_ACTIVATION_PARAMETER,
             fields.Date.to_string(today),
@@ -1670,7 +1737,10 @@ class TestProjectDashboard(TransactionCase):
         )
 
     def test_warranty_cron_deduplicates_recipients_with_the_same_email(self):
-        today = fields.Date.context_today(self.env["project.project"])
+        # Same day as the cron, which runs in Colombia time.
+        today = fields.Date.context_today(
+            self.env["project.project"].with_context(tz=WARRANTY_TIMEZONE)
+        )
         self.env["ir.config_parameter"].set_param(
             WARRANTY_ACTIVATION_PARAMETER,
             fields.Date.to_string(today),

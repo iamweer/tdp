@@ -376,6 +376,32 @@ button.o_project_detail_dashboard_card {
     white-space: nowrap;
 }
 
+// Las fases muestran sus fechas debajo del nombre: necesitan más ancho.
+.o_project_detail_dashboard_bar_row--dated {
+    grid-template-columns: minmax(160px, 0.9fr) minmax(0, 1.1fr) 56px;
+}
+
+.o_project_detail_dashboard_bar_label--dated {
+    display: flex;
+    flex-direction: column;
+
+    > span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+}
+
+.o_project_detail_dashboard_phase_dates {
+    margin-top: 2px;
+    color: var(--project-detail-muted);
+    font-size: 0.75rem;
+    white-space: nowrap;
+
+    .fa {
+        margin-right: 4px;
+    }
+}
+
 // Donut --------------------------------------------------------------------
 
 .o_project_detail_dashboard_donut_body {

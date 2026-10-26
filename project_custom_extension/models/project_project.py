@@ -52,11 +52,25 @@ COMPANY_TYPE_SELECTION = [
 ]
 
 # Puntos por debajo del avance esperado a partir de los que el cronograma
-# pasa a "En riesgo" (si aún no hay tareas ni hitos vencidos). Configurable.
+# pasa a "En riesgo de atraso" (si aún no hay tareas ni hitos vencidos). Configurable.
 SCHEDULE_RISK_DEVIATION_DEFAULT = 10
 SCHEDULE_RISK_DEVIATION_PARAMETER = (
     "project_custom_extension.schedule_risk_deviation"
 )
+
+# Días antes del vencimiento en que una tarea abierta del Gantt pasa a
+# "En riesgo de atraso" (mismo umbral que los compromisos del dashboard).
+GANTT_AT_RISK_DAYS = 3
+
+# Prioridad de los estados del Gantt: el padre muestra el más grave.
+GANTT_STATUS_ORDER = {
+    "late": 0,
+    "at_risk": 1,
+    "on_time": 2,
+    "no_dates": 3,
+    "done": 4,
+    "canceled": 5,
+}
 
 # Las tareas internas no cuentan para el avance, los contadores ni los reportes.
 VISIBLE_TASK_DOMAIN = [("is_internal_task", "=", False)]
@@ -796,6 +810,7 @@ class ProjectProject(models.Model):
         return {
             "project": False,
             "rows": [],
+            "status_summary": [],
             "total": {
                 "start_date": False,
                 "end_date": False,
@@ -978,6 +993,47 @@ class ProjectProject(models.Model):
             else:
                 timeline_end_date = timeline_start_date
 
+        status_labels = {
+            "late": _("Retrasada"),
+            "at_risk": _("En riesgo de atraso"),
+            "on_time": _("A tiempo"),
+            "no_dates": _("Sin fechas"),
+            "done": _("Completada"),
+            "canceled": _("Cancelada"),
+        }
+        status_by_id = {}
+        own_status_by_id = {}
+
+        def own_status(task):
+            if task.state == "1_done":
+                return "done"
+            if task.state == "1_canceled":
+                return "canceled"
+            end_date = task_dates[task.id][1]
+            if not end_date:
+                return "no_dates"
+            if end_date < today:
+                return "late"
+            if (end_date - today).days <= GANTT_AT_RISK_DAYS:
+                return "at_risk"
+            return "on_time"
+
+        def compute_status(task):
+            # A parent shows the worst status among itself and its visible
+            # descendants, so a phase with late subtasks is shown as late.
+            own_status_by_id[task.id] = own_status(task)
+            statuses = [own_status_by_id[task.id]] + [
+                compute_status(child)
+                for child in children_by_parent.get(task.id, [])
+                if child.id in visible_ids
+            ]
+            status_by_id[task.id] = min(statuses, key=GANTT_STATUS_ORDER.get)
+            return status_by_id[task.id]
+
+        for task in children_by_parent.get(False, []):
+            if task.id in visible_ids:
+                compute_status(task)
+
         root_color_indexes = {}
         rows = []
 
@@ -1010,6 +1066,8 @@ class ProjectProject(models.Model):
                     "duration_days": self._project_gantt_duration(start_date, end_date),
                     "root_id": current_root_id,
                     "color_index": root_color_indexes[current_root_id],
+                    "status": status_by_id[task.id],
+                    "status_label": status_labels[status_by_id[task.id]],
                 })
                 append_rows(task.id, depth + 1, current_root_id)
 
@@ -1031,6 +1089,13 @@ class ProjectProject(models.Model):
                 if project.date else False,
             },
             "rows": rows,
+            "status_summary": [{
+                "key": key,
+                "label": label,
+                "count": sum(
+                    1 for status in own_status_by_id.values() if status == key
+                ),
+            } for key, label in status_labels.items()],
             "total": {
                 "start_date": fields.Date.to_string(full_start_date)
                 if full_start_date else False,
@@ -1083,6 +1148,23 @@ class ProjectProject(models.Model):
         return fields.Datetime.context_timestamp(self, value).date()
 
     @api.model
+    def _project_expected_progress(self, project, reference_date):
+        """Share of the planned time elapsed at ``reference_date`` (0-100),
+        or ``False`` when the project has no valid start and end dates."""
+        if not (
+            project.date_start
+            and project.date
+            and project.date > project.date_start
+        ):
+            return False
+        total_days = (project.date - project.date_start).days
+        elapsed_days = min(
+            max((reference_date - project.date_start).days, 0),
+            total_days,
+        )
+        return round(elapsed_days * 100 / total_days, 1)
+
+    @api.model
     def _project_detail_schedule(
         self,
         project,
@@ -1104,18 +1186,9 @@ class ProjectProject(models.Model):
         deviation is real minus expected (negative means behind).
         """
         expected = deviation = False
-        if (
-            percentage is not False
-            and project.date_start
-            and project.date
-            and project.date > project.date_start
-        ):
-            total_days = (project.date - project.date_start).days
-            elapsed_days = min(
-                max((reference_date - project.date_start).days, 0),
-                total_days,
-            )
-            expected = round(elapsed_days * 100 / total_days, 1)
+        if percentage is not False:
+            expected = self._project_expected_progress(project, reference_date)
+        if expected is not False:
             deviation = round(percentage - expected, 1)
 
         reasons = []
@@ -1138,7 +1211,7 @@ class ProjectProject(models.Model):
             )
         else:
             if deviation < -self._get_schedule_risk_deviation():
-                key, label = "at_risk", _("En riesgo")
+                key, label = "at_risk", _("En riesgo de atraso")
             else:
                 key, label = "on_time", _("A tiempo")
             detail = _(
@@ -1300,7 +1373,7 @@ class ProjectProject(models.Model):
             elif task.date_deadline < reference_datetime:
                 status, status_label = "overdue", _("Vencida")
             elif (deadline - reference_date).days <= 3:
-                status, status_label = "at_risk", _("En riesgo")
+                status, status_label = "at_risk", _("En riesgo de atraso")
             else:
                 status, status_label = "on_time", _("En tiempo")
             commitments.append({
@@ -1352,6 +1425,12 @@ class ProjectProject(models.Model):
             "weight": round(item["weight"], 2),
             "completed": item["completed_count"],
             "total": item["total_count"],
+            "start_date": fields.Date.to_string(
+                self._project_gantt_task_date(item["task"].planned_date_begin)
+            ) if item["task"].planned_date_begin else False,
+            "end_date": fields.Date.to_string(
+                self._project_gantt_task_date(item["task"].date_deadline)
+            ) if item["task"].date_deadline else False,
             "selected": item["task"] == phase,
             "model": "project.task",
             "domain": [*base_domain, ("id", "child_of", item["task"].id)],
@@ -1558,16 +1637,21 @@ class ProjectProject(models.Model):
         status_labels = dict(
             Project._fields["last_update_status"]._description_selection(self.env)
         )
+        status_labels["at_risk"] = _("En riesgo de atraso")
         progress_by_project = self._get_project_execution_progress_by_project(
             projects
         )
+        today = fields.Date.context_today(self)
         project_rows = [{
             "id": project.id,
             "name": project.display_name,
             "customer_name": project.partner_id.display_name or "",
             "progress": progress_by_project[project.id]["percentage"],
+            "expected_progress": self._project_expected_progress(project, today),
             "status": project.last_update_status,
             "status_label": status_labels.get(project.last_update_status, ""),
+            "start_date": fields.Date.to_string(project.date_start)
+            if project.date_start else False,
             "deadline": fields.Date.to_string(project.date) if project.date else False,
         } for project in projects]
         project_rows.sort(key=lambda project: (
@@ -1587,7 +1671,7 @@ class ProjectProject(models.Model):
             ),
             (
                 "at_risk",
-                _("En Riesgo"),
+                _("En Riesgo de Atraso"),
                 "fa-exclamation-triangle",
                 [("last_update_status", "=", "at_risk")],
             ),

@@ -38,7 +38,7 @@ class ResConfigSettings(models.TransientModel):
         default=DASHBOARD_HEALTH_DEFAULTS["attention_threshold"],
     )
     project_schedule_risk_deviation = fields.Integer(
-        string="Desviación para En riesgo",
+        string="Desviación para En riesgo de atraso",
         config_parameter=SCHEDULE_RISK_DEVIATION_PARAMETER,
         default=SCHEDULE_RISK_DEVIATION_DEFAULT,
     )
@@ -79,5 +79,5 @@ class ResConfigSettings(models.TransientModel):
         for settings in self:
             if not 0 <= settings.project_schedule_risk_deviation <= 100:
                 raise ValidationError(
-                    _("La desviación para En riesgo debe estar entre 0 y 100.")
+                    _("La desviación para En riesgo de atraso debe estar entre 0 y 100.")
                 )

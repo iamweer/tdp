@@ -66,6 +66,16 @@ const BAR_COLORS = [
     "#198f65",
 ];
 
+// Colores de las barras según el estado de la tarea.
+export const STATUS_COLORS = {
+    late: "#d92d3a",
+    at_risk: "#e8a317",
+    on_time: "#2f9e57",
+    no_dates: "#8a94a6",
+    done: "#5f6b7d",
+    canceled: "#b4bac5",
+};
+
 function parseDate(value) {
     if (!value) {
         return false;
@@ -107,12 +117,13 @@ function csvCell(value) {
 
 export function buildProjectGanttCsv(rows, total = false) {
     const lines = [
-        ["Actividad", "Inicio", "Fin", "Duración"],
+        ["Actividad", "Inicio", "Fin", "Duración", "Estado"],
         ...rows.map((row) => [
             row.name,
             formatCsvDate(row.start_date),
             formatCsvDate(row.end_date),
             formatCsvDuration(row.duration_days),
+            row.status_label || "",
         ]),
     ];
     if (total) {
@@ -121,6 +132,7 @@ export function buildProjectGanttCsv(rows, total = false) {
             formatCsvDate(total.start_date),
             formatCsvDate(total.end_date),
             formatCsvDuration(total.duration_days),
+            "",
         ]);
     }
     return `\uFEFF${lines.map((line) => line.map(csvCell).join(";")).join("\r\n")}\r\n`;
@@ -295,6 +307,10 @@ export class ProjectGantt extends Component {
             end_date: this.total.end_date,
             color_index: 0,
         };
+    }
+
+    get statusSummary() {
+        return (this.state.data?.status_summary || []).filter((item) => item.count);
     }
 
     get hasVisibleRows() {
@@ -695,7 +711,41 @@ export class ProjectGantt extends Component {
         if (!geometry) {
             return "display: none;";
         }
-        return `left: ${geometry.left}px; width: ${geometry.width}px; background-color: ${this.colorForRow(row)};`;
+        return `left: ${geometry.left}px; width: ${geometry.width}px; background-color: ${this.colorForStatus(row.status)};`;
+    }
+
+    /**
+     * Tramo rayado entre el fin de una tarea retrasada y hoy: muestra
+     * cuánto tiempo lleva vencida.
+     */
+    overdueTailStyle(row) {
+        if (row.status !== "late") {
+            return false;
+        }
+        const end = parseDate(row.end_date);
+        const today = parseDate(this.state.data?.timeline?.today);
+        const viewportStart = this.viewportStartDate;
+        const viewportEnd = this.viewportEndDate;
+        if (!end || !today || !viewportStart || !viewportEnd || end >= today) {
+            return false;
+        }
+        const tailStart = end.plus({ days: 1 });
+        const clippedStart = tailStart < viewportStart ? viewportStart : tailStart;
+        const clippedEnd = today > viewportEnd.plus({ days: 1 }) ? viewportEnd.plus({ days: 1 }) : today;
+        if (clippedStart >= clippedEnd) {
+            return false;
+        }
+        const left = this.datePosition(clippedStart);
+        const width = this.datePosition(clippedEnd) - left;
+        return width > 0 ? `left: ${left}px; width: ${width}px;` : false;
+    }
+
+    colorForStatus(status) {
+        return STATUS_COLORS[status] || STATUS_COLORS.no_dates;
+    }
+
+    barTitle(row) {
+        return row.status_label ? `${row.name} · ${row.status_label}` : row.name;
     }
 
     colorForRow(row) {
@@ -708,6 +758,7 @@ export class ProjectGantt extends Component {
             "o_project_gantt_row",
             row.has_children ? "is-parent" : "is-leaf",
             row.depth ? "is-child" : "is-root",
+            row.status ? `is-status-${row.status}` : "",
         ].join(" ");
     }
 

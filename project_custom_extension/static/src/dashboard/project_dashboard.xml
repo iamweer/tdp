@@ -127,15 +127,30 @@
                                     <span class="o_project_dashboard_project_identity">
                                         <strong t-out="project.name"/>
                                         <small t-if="project.customer_name" t-out="project.customer_name"/>
+                                        <small class="o_project_dashboard_project_dates"
+                                               t-att-title="'Inicio ' + formatDate(project.start_date) + ' · Fin ' + formatDate(project.deadline)">
+                                            <i class="fa fa-calendar-o" aria-hidden="true"/>
+                                            <t t-out="formatDate(project.start_date)"/> → <t t-out="formatDate(project.deadline)"/>
+                                        </small>
                                     </span>
                                     <span class="o_project_dashboard_progress_track" aria-hidden="true">
                                         <span t-attf-class="o_project_dashboard_progress_bar o_project_dashboard_progress_bar--#{project.status}"
                                               t-att-style="'width: ' + (project.progress === false ? 0 : project.progress) + '%'"/>
+                                        <span t-if="project.expected_progress !== false"
+                                              class="o_project_dashboard_progress_expected"
+                                              t-att-style="'left: ' + project.expected_progress + '%'"
+                                              t-att-title="'Esperado ' + formatPercentage(project.expected_progress) + '%'"/>
                                     </span>
-                                    <strong t-if="project.progress !== false" class="o_project_dashboard_progress_value">
-                                        <t t-out="formatPercentage(project.progress)"/>%
-                                    </strong>
-                                    <strong t-else="" class="o_project_dashboard_progress_value">Sin pesos asignados</strong>
+                                    <span class="o_project_dashboard_progress_value">
+                                        <strong t-if="project.progress !== false">
+                                            <t t-out="formatPercentage(project.progress)"/>%
+                                        </strong>
+                                        <strong t-else="">Sin pesos asignados</strong>
+                                        <small class="o_project_dashboard_progress_expected_value"
+                                               title="Avance esperado según las fechas del proyecto">
+                                            Esp. <t t-if="project.expected_progress !== false"><t t-out="formatPercentage(project.expected_progress)"/>%</t><t t-else="">—</t>
+                                        </small>
+                                    </span>
                                     <i class="fa fa-chevron-right" aria-hidden="true"/>
                                 </button>
                             </div>
