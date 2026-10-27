@@ -73,6 +73,15 @@
         opacity: 0.55;
         pointer-events: none;
     }
+
+    // Shadow next to the sticky columns when there are hidden days.
+    &--hidden-left .o_ts_grid_name_col {
+        box-shadow: 6px 0 6px -4px rgba(0, 0, 0, 0.18);
+    }
+
+    &--hidden-right .o_ts_grid_total_col {
+        box-shadow: -6px 0 6px -4px rgba(0, 0, 0, 0.18);
+    }
 }
 
 .o_ts_grid_table {
@@ -131,8 +140,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
 
-    thead &,
-    tfoot & {
+    // Same specificity as ".o_ts_grid_table thead th" (z-index 2), so the
+    // sticky corners stay above the day cells that scroll under them.
+    .o_ts_grid_table thead &,
+    .o_ts_grid_table tfoot & {
         z-index: 3;
     }
 }
@@ -164,7 +175,8 @@
     font-weight: 600;
     background: var(--o-ts-grid-group-bg) !important;
 
-    thead & {
+    .o_ts_grid_table thead &,
+    .o_ts_grid_table tfoot & {
         z-index: 3;
     }
 }

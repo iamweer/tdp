@@ -51,6 +51,27 @@ class TestProjectUiTours(HttpCase):
             login="admin",
         )
 
+    def test_project_timesheet_grid_shows_today_tour(self):
+        admin = self.env.ref("base.user_admin")
+        employee = admin.employee_id or self.env["hr.employee"].create({
+            "name": "Empleado Tour UI",
+            "user_id": admin.id,
+        })
+        self.env["project.task.time.entry"].create({
+            "task_id": self.env["project.task"].search(
+                [("project_id", "=", self.project.id)], limit=1
+            ).id,
+            "employee_id": employee.id,
+            "unit_amount": 3,
+        })
+        # Narrower than a whole month, like a laptop screen.
+        self.browser_size = "1100x768"
+        self.start_tour(
+            "/odoo/action-project_custom_extension.action_project_timesheet_grid",
+            "project_custom_extension_timesheet_grid_tour",
+            login="admin",
+        )
+
     def test_project_detail_dashboard_and_gantt_tour(self):
         self.start_tour(
             "/odoo/action-project_custom_extension.action_project_detail_dashboard",

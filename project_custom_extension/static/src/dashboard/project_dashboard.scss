@@ -164,7 +164,7 @@
 
 .o_project_dashboard_kpis {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 16px;
     margin-bottom: 18px;
 }
@@ -233,7 +233,7 @@
     display: none;
 }
 
-.o_project_dashboard_kpi--on_track {
+.o_project_dashboard_kpi--on_time {
     .o_project_dashboard_kpi_icon {
         background: linear-gradient(145deg, #38ad4c, #168335);
         box-shadow: 0 7px 18px rgba(37, 155, 69, 0.24);
@@ -255,7 +255,7 @@
     }
 }
 
-.o_project_dashboard_kpi--off_track {
+.o_project_dashboard_kpi--late {
     .o_project_dashboard_kpi_icon {
         background: linear-gradient(145deg, #ed4853, #c81928);
         box-shadow: 0 7px 18px rgba(223, 47, 58, 0.24);
@@ -263,6 +263,18 @@
 
     .o_project_dashboard_kpi_value {
         color: var(--project-dashboard-red);
+    }
+}
+
+// Proyectos sin fechas o pesos: no se puede medir su avance esperado.
+.o_project_dashboard_kpi--unplanned {
+    .o_project_dashboard_kpi_icon {
+        background: linear-gradient(145deg, #a3abb8, #7a8394);
+        box-shadow: 0 7px 18px rgba(101, 112, 135, 0.22);
+    }
+
+    .o_project_dashboard_kpi_value {
+        color: var(--project-dashboard-muted);
     }
 }
 
@@ -353,7 +365,7 @@
     background: #9098a6;
 }
 
-.o_project_dashboard_project_status--on_track {
+.o_project_dashboard_project_status--on_time {
     background: var(--project-dashboard-green);
 }
 
@@ -361,12 +373,8 @@
     background: var(--project-dashboard-yellow);
 }
 
-.o_project_dashboard_project_status--off_track {
+.o_project_dashboard_project_status--late {
     background: var(--project-dashboard-red);
-}
-
-.o_project_dashboard_project_status--on_hold {
-    background: #3283c8;
 }
 
 .o_project_dashboard_project_identity {
@@ -406,13 +414,15 @@
     background: linear-gradient(90deg, #188e39, #36ab4d);
 }
 
-.o_project_dashboard_progress_bar--at_risk,
-.o_project_dashboard_progress_bar--on_hold,
-.o_project_dashboard_progress_bar--to_define {
+.o_project_dashboard_progress_bar--at_risk {
     background: linear-gradient(90deg, #efac00, #ffc628);
 }
 
-.o_project_dashboard_progress_bar--off_track {
+.o_project_dashboard_progress_bar--unplanned {
+    background: linear-gradient(90deg, #7a8394, #a3abb8);
+}
+
+.o_project_dashboard_progress_bar--late {
     background: linear-gradient(90deg, #d91f2e, #ef4b55);
 }
 
@@ -710,7 +720,7 @@
     }
 
     .o_project_dashboard_kpis {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
     .o_project_dashboard_main_grid {

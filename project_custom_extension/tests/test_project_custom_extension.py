@@ -1147,10 +1147,13 @@ class TestProjectDashboard(TransactionCase):
         )
 
         self.assertEqual(data["selected_customer"]["id"], self.partner_a.id)
+        # The cards use the automatic schedule, not the manual update status:
+        # the "on track" project has overdue tasks and the rest have no dates.
         self.assertEqual(self._item_by_key(data["kpis"], "active")["count"], 4)
-        self.assertEqual(self._item_by_key(data["kpis"], "on_track")["count"], 1)
-        self.assertEqual(self._item_by_key(data["kpis"], "at_risk")["count"], 1)
-        self.assertEqual(self._item_by_key(data["kpis"], "off_track")["count"], 0)
+        self.assertEqual(self._item_by_key(data["kpis"], "on_time")["count"], 0)
+        self.assertEqual(self._item_by_key(data["kpis"], "at_risk")["count"], 0)
+        self.assertEqual(self._item_by_key(data["kpis"], "late")["count"], 1)
+        self.assertEqual(self._item_by_key(data["kpis"], "unplanned")["count"], 3)
         self.assertNotIn(self.done_project.id, [row["id"] for row in data["projects"]])
         self.assertNotIn(
             self.archived_project.id,
@@ -1160,6 +1163,41 @@ class TestProjectDashboard(TransactionCase):
         for metric in (*data["kpis"], *data["alerts"]):
             count = self.env[metric["model"]].search_count(metric["domain"])
             self.assertEqual(count, metric["count"])
+
+    def test_dashboard_status_cards_add_up_and_match_the_detail_schedule(self):
+        today = fields.Date.context_today(self.env["project.project"])
+        # Manually marked "on track" but its end date passed with work open.
+        expired_project = self._create_project(
+            "Proyecto con fecha fin superada",
+            self.partner_a,
+            "on_track",
+            date_start=today - timedelta(days=60),
+            date=today - timedelta(days=1),
+        )
+        self._create_weighted_task(expired_project, "Fase abierta", 100)
+        # Manually "to define" but progressing as planned.
+        on_time_project = self._create_project(
+            "Proyecto al día",
+            self.partner_a,
+            "to_define",
+            date_start=today - timedelta(days=5),
+            date=today + timedelta(days=95),
+        )
+        self._create_weighted_task(on_time_project, "Fase al día", 100)
+
+        Project = self.env["project.project"]
+        data = Project.get_project_dashboard_data(self.partner_a.id)
+        kpis = {kpi["key"]: kpi["count"] for kpi in data["kpis"]}
+        self.assertEqual(
+            kpis["active"],
+            kpis["on_time"] + kpis["at_risk"] + kpis["late"] + kpis["unplanned"],
+        )
+        rows = {row["id"]: row for row in data["projects"]}
+        self.assertEqual(rows[expired_project.id]["status"], "late")
+        self.assertEqual(rows[on_time_project.id]["status"], "on_time")
+        for project_id, row in rows.items():
+            detail = Project.get_project_detail_dashboard_data(project_id)
+            self.assertEqual(row["status"], detail["kpis"]["schedule"]["key"])
 
     def test_dashboard_includes_subtasks_in_alerts(self):
         data = self.env["project.project"].get_project_dashboard_data(
@@ -1427,7 +1465,9 @@ class TestProjectDashboard(TransactionCase):
 
         self.assertEqual(project_row["progress"], 30.0)
         self.assertEqual(data["health"]["components"]["progress"], 30.0)
-        self.assertEqual(data["projects"][0]["id"], self.at_risk_project.id)
+        # Late projects (overdue tasks) are listed first.
+        self.assertEqual(data["projects"][0]["id"], self.on_track_project.id)
+        self.assertEqual(data["projects"][0]["status"], "late")
 
     def test_dashboard_health_formula_and_problem_deduplication(self):
         data = self.env["project.project"].get_project_dashboard_data(

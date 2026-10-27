@@ -87,8 +87,9 @@
                 <span>Cargando horas…</span>
             </div>
 
-            <div t-elif="state.data"
-                 t-attf-class="o_ts_grid_scroll #{state.loading ? 'o_ts_grid_scroll--loading' : ''}">
+            <div t-elif="state.data" t-ref="scroll"
+                 t-on-scroll="updateHiddenDays"
+                 t-attf-class="o_ts_grid_scroll #{state.loading ? 'o_ts_grid_scroll--loading' : ''} #{state.hiddenLeft ? 'o_ts_grid_scroll--hidden-left' : ''} #{state.hiddenRight ? 'o_ts_grid_scroll--hidden-right' : ''}">
                 <table class="o_ts_grid_table">
                     <thead>
                         <tr>
@@ -96,6 +97,7 @@
                                 <t t-out="groupByOptions.find((option) => option[0] === state.data.group_by)[1]"/>
                             </th>
                             <th t-foreach="days" t-as="day" t-key="day.date" scope="col"
+                                t-att-data-date="day.date"
                                 t-attf-class="o_ts_grid_day #{day.is_weekend ? 'o_ts_grid_weekend' : ''} #{day.is_today ? 'o_ts_grid_today' : ''}">
                                 <t t-set="parts" t-value="dayParts(day)"/>
                                 <span class="o_ts_grid_weekday" t-out="parts.weekday"/>

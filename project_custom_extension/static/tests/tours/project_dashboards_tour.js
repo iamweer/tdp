@@ -23,6 +23,30 @@ registry.category("web_tour.tours").add("project_custom_extension_dashboard_tour
             content: "El KPI usa la nueva etiqueta",
             trigger: `.o_project_dashboard_kpi--at_risk:contains("En Riesgo de Atraso")`,
         },
+        {
+            content: "El estado del proyecto es el cronograma automático (tarea vencida)",
+            trigger: `${PROJECT_ROW} .o_project_dashboard_project_status--late`,
+        },
+        {
+            content: "Hay una tarjeta para los proyectos sin planificación",
+            trigger: `.o_project_dashboard_kpi--unplanned:contains("Sin Planificación")`,
+        },
+        {
+            content: "Las tarjetas de estado suman los proyectos activos",
+            trigger: ".o_project_dashboard_kpis",
+            run() {
+                const count = (key) => Number(
+                    document.querySelector(
+                        `.o_project_dashboard_kpi--${key} .o_project_dashboard_kpi_value`
+                    ).textContent
+                );
+                const statuses = ["on_time", "at_risk", "late", "unplanned"];
+                const sum = statuses.reduce((total, key) => total + count(key), 0);
+                if (sum !== count("active")) {
+                    throw new Error(`Las tarjetas suman ${sum} y hay ${count("active")} activos`);
+                }
+            },
+        },
     ],
 });
 

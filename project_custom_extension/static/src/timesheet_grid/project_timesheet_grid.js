@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, onWillStart, useState } from "@odoo/owl";
+import { Component, onWillStart, useEffect, useRef, useState } from "@odoo/owl";
 import { browser } from "@web/core/browser/browser";
 import { deserializeDate, serializeDate } from "@web/core/l10n/dates";
 import { _t } from "@web/core/l10n/translation";
@@ -69,9 +69,21 @@ export class ProjectTimesheetGrid extends Component {
             prefs: { ...DEFAULT_PREFERENCES, ...this.getStoredPreferences() },
             search: "",
             collapsed: {},
+            hiddenLeft: false,
+            hiddenRight: false,
         });
         this.requestSequence = 0;
+        this.scrollRef = useRef("scroll");
         onWillStart(() => this.loadData());
+        // A month does not fit on most screens: on each load show today
+        // (or the first day with hours) instead of always the 1st.
+        useEffect(
+            () => {
+                this.scrollToFocusDay();
+                this.updateHiddenDays();
+            },
+            () => [this.state.data]
+        );
     }
 
     // ------------------------------------------------------------------
@@ -154,6 +166,49 @@ export class ProjectTimesheetGrid extends Component {
             if (requestSequence === this.requestSequence) {
                 this.state.loading = false;
             }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Horizontal scroll
+    // ------------------------------------------------------------------
+
+    get focusDay() {
+        const days = this.days;
+        const daily = this.state.data?.totals.daily || {};
+        return days.find((day) => day.is_today) || days.find((day) => daily[day.date]);
+    }
+
+    scrollToFocusDay() {
+        const container = this.scrollRef.el;
+        const day = this.focusDay;
+        if (!container || !day) {
+            return;
+        }
+        const cell = container.querySelector(`th[data-date="${day.date}"]`);
+        const totalColumn = container.querySelector("thead .o_ts_grid_total_col");
+        if (!cell) {
+            return;
+        }
+        // Leave the focus day just before the sticky total column, so the
+        // previous days stay visible too.
+        const visibleRight = container.clientWidth - (totalColumn?.offsetWidth || 0);
+        container.scrollLeft = Math.max(0, cell.offsetLeft + cell.offsetWidth - visibleRight);
+    }
+
+    updateHiddenDays() {
+        const container = this.scrollRef.el;
+        if (!container) {
+            return;
+        }
+        const hiddenLeft = container.scrollLeft > 1;
+        const hiddenRight =
+            container.scrollLeft + container.clientWidth < container.scrollWidth - 1;
+        if (hiddenLeft !== this.state.hiddenLeft) {
+            this.state.hiddenLeft = hiddenLeft;
+        }
+        if (hiddenRight !== this.state.hiddenRight) {
+            this.state.hiddenRight = hiddenRight;
         }
     }
 

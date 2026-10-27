@@ -123,7 +123,7 @@
                                         class="o_project_dashboard_project_row"
                                         t-on-click="() => this.openProject(project)">
                                     <span t-attf-class="o_project_dashboard_project_status o_project_dashboard_project_status--#{project.status}"
-                                          t-att-title="project.status_label"/>
+                                          t-att-title="project.status_label + ' · ' + project.status_detail"/>
                                     <span class="o_project_dashboard_project_identity">
                                         <strong t-out="project.name"/>
                                         <small t-if="project.customer_name" t-out="project.customer_name"/>

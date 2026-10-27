@@ -24,20 +24,20 @@ DASHBOARD_HEALTH_PARAMETERS = {
     for key in DASHBOARD_HEALTH_DEFAULTS
 }
 
+# Claves del semáforo de cronograma (_project_detail_schedule), el mismo
+# estado automático en el dashboard general y en el de detalle.
 DASHBOARD_STATUS_SCORES = {
-    "on_track": 100,
+    "on_time": 100,
     "at_risk": 60,
-    "off_track": 20,
-    "on_hold": 40,
-    "to_define": 50,
+    "late": 20,
+    "unplanned": 50,
 }
 
 DASHBOARD_STATUS_ORDER = {
-    "off_track": 0,
+    "late": 0,
     "at_risk": 1,
-    "on_hold": 2,
-    "to_define": 3,
-    "on_track": 4,
+    "unplanned": 2,
+    "on_time": 3,
 }
 
 WARRANTY_ACTIVATION_PARAMETER = (
@@ -594,6 +594,7 @@ class ProjectProject(models.Model):
         task_domain,
         current_datetime,
         progress_by_project=None,
+        schedule_by_project=None,
     ):
         if not projects:
             return {
@@ -622,9 +623,16 @@ class ProjectProject(models.Model):
             if planned_progress
             else False
         )
+        schedule_by_project = schedule_by_project or (
+            self._get_project_schedule_by_project(
+                projects,
+                progress_by_project,
+                fields.Date.context_today(self),
+            )
+        )
         status_score = round(
             sum(
-                DASHBOARD_STATUS_SCORES.get(project.last_update_status, 50)
+                DASHBOARD_STATUS_SCORES.get(schedule_by_project[project.id]["key"], 50)
                 for project in projects
             )
             / project_count,
@@ -1229,6 +1237,56 @@ class ProjectProject(models.Model):
         }
 
     @api.model
+    def _get_project_schedule_by_project(
+        self,
+        projects,
+        progress_by_project,
+        reference_date,
+    ):
+        """Schedule traffic light of several projects with the same counts
+        as the detail dashboard, in three grouped queries."""
+        if not projects:
+            return {}
+        Task = self.env["project.task"]
+        reference_string = fields.Datetime.to_string(
+            self._project_detail_reference_datetime(reference_date)
+        )
+        open_domain = [
+            ("project_id", "in", projects.ids),
+            ("active", "=", True),
+            ("state", "in", Task.OPEN_STATES),
+            *VISIBLE_TASK_DOMAIN,
+        ]
+        overdue_domain = [*open_domain, ("date_deadline", "<", reference_string)]
+
+        def count_by_project(domain):
+            return {
+                project.id: count
+                for project, count in Task._read_group(
+                    domain, ["project_id"], ["__count"]
+                )
+            }
+
+        overdue_task_counts = count_by_project(
+            [*overdue_domain, ("parent_id", "!=", False)]
+        )
+        overdue_phase_counts = count_by_project(
+            [*overdue_domain, ("parent_id", "=", False)]
+        )
+        open_task_counts = count_by_project(open_domain)
+        return {
+            project.id: self._project_detail_schedule(
+                project,
+                progress_by_project[project.id]["percentage"],
+                reference_date,
+                overdue_task_counts.get(project.id, 0),
+                overdue_phase_counts.get(project.id, 0),
+                bool(open_task_counts.get(project.id)),
+            )
+            for project in projects
+        }
+
+    @api.model
     def get_project_detail_dashboard_data(
         self,
         project_id=False,
@@ -1634,22 +1692,25 @@ class ProjectProject(models.Model):
             project_domain.append(("date", ">=", date_from))
         projects = Project.search(project_domain)
 
-        status_labels = dict(
-            Project._fields["last_update_status"]._description_selection(self.env)
-        )
-        status_labels["at_risk"] = _("En riesgo de atraso")
         progress_by_project = self._get_project_execution_progress_by_project(
             projects
         )
         today = fields.Date.context_today(self)
+        # Automatic schedule, so both dashboards always show the same status.
+        schedule_by_project = self._get_project_schedule_by_project(
+            projects,
+            progress_by_project,
+            today,
+        )
         project_rows = [{
             "id": project.id,
             "name": project.display_name,
             "customer_name": project.partner_id.display_name or "",
             "progress": progress_by_project[project.id]["percentage"],
             "expected_progress": self._project_expected_progress(project, today),
-            "status": project.last_update_status,
-            "status_label": status_labels.get(project.last_update_status, ""),
+            "status": schedule_by_project[project.id]["key"],
+            "status_label": schedule_by_project[project.id]["label"],
+            "status_detail": schedule_by_project[project.id]["detail"],
             "start_date": fields.Date.to_string(project.date_start)
             if project.date_start else False,
             "deadline": fields.Date.to_string(project.date) if project.date else False,
@@ -1661,37 +1722,33 @@ class ProjectProject(models.Model):
             project["name"].lower(),
         ))
 
+        # The schedule is computed, so each card filters by project ids and
+        # the status cards always add up to the active projects.
         kpi_definitions = (
-            ("active", _("Proyectos Activos"), "fa-folder-open", []),
-            (
-                "on_track",
-                _("En Tiempo"),
-                "fa-clock-o",
-                [("last_update_status", "=", "on_track")],
-            ),
+            ("active", _("Proyectos Activos"), "fa-folder-open", False),
+            ("on_time", _("En Tiempo"), "fa-clock-o", "on_time"),
             (
                 "at_risk",
                 _("En Riesgo de Atraso"),
                 "fa-exclamation-triangle",
-                [("last_update_status", "=", "at_risk")],
+                "at_risk",
             ),
-            (
-                "off_track",
-                _("Atrasados"),
-                "fa-clock-o",
-                [("last_update_status", "=", "off_track")],
-            ),
+            ("late", _("Atrasados"), "fa-clock-o", "late"),
+            ("unplanned", _("Sin Planificación"), "fa-question", "unplanned"),
         )
         kpis = []
-        for key, title, icon, extra_domain in kpi_definitions:
-            domain = expression.AND([project_domain, extra_domain])
+        for key, title, icon, status in kpi_definitions:
+            project_ids = [
+                project.id for project in projects
+                if not status or schedule_by_project[project.id]["key"] == status
+            ]
             kpis.append({
                 "key": key,
                 "title": title,
                 "icon": icon,
-                "count": Project.search_count(domain),
+                "count": len(project_ids),
                 "model": "project.project",
-                "domain": domain,
+                "domain": [("id", "in", project_ids)],
             })
 
         task_domain = [
@@ -1784,6 +1841,7 @@ class ProjectProject(models.Model):
                 task_domain,
                 current_datetime,
                 progress_by_project=progress_by_project,
+                schedule_by_project=schedule_by_project,
             ),
         }
 
