@@ -14,6 +14,28 @@
         <field name="auto_delete" eval="False"/>
     </record>
 
+    <!-- Aviso al cliente (contactos configurados en el proyecto). -->
+    <record id="mail_template_warranty_completion_customer" model="mail.template">
+        <field name="name">Finalización de garantía del proyecto (cliente)</field>
+        <field name="model_id" ref="project.model_project_project"/>
+        <field name="subject">Finalización del periodo de garantía: {{ object.name }}</field>
+        <field name="email_from">{{ (object.user_id.email_formatted or object.company_id.email_formatted or user.email_formatted) }}</field>
+        <field name="body_html" type="html">
+            <div>
+                <p>Cordial saludo,</p>
+                <p>Le informamos que el periodo de garantía del proyecto
+                    <strong t-out="object.name"/> finalizó el
+                    <strong t-out="format_date(object.warranty_end_date)"/>.</p>
+                <p>Agradecemos su confianza. Si requiere soporte adicional o una
+                    nueva fase, su gerente de proyecto
+                    <t t-if="object.user_id"><strong t-out="object.user_id.name"/></t>
+                    estará atento a ayudarle.</p>
+                <p>Atentamente,<br/><t t-out="object.company_id.name"/></p>
+            </div>
+        </field>
+        <field name="auto_delete" eval="False"/>
+    </record>
+
     <record id="ir_cron_close_projects_after_warranty" model="ir.cron">
         <field name="name">Finalizar proyectos al vencer garantía</field>
         <field name="model_id" ref="project.model_project_project"/>

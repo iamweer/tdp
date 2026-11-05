@@ -32,6 +32,7 @@ function makeData(projectId = 10) {
                 id: 1,
                 status: "late",
                 status_label: "Retrasada",
+                stage_name: "EN CURSO",
                 name: "1. Análisis",
                 parent_id: false,
                 depth: 0,
@@ -280,7 +281,10 @@ describe("cronograma Gantt de proyectos", () => {
         });
 
         const csv = buildProjectGanttCsv(component.visibleRows, component.total);
-        expect(csv).toInclude('"Actividad";"Inicio";"Fin";"Duración";"Estado"');
+        expect(csv).toInclude('"Actividad";"Inicio";"Fin";"Duración";"Estado";"Etapa"');
+        expect(csv).toInclude('"Retrasada";"EN CURSO"');
+        expect(".o_project_gantt_stage").toHaveCount(1);
+        expect(".o_project_gantt_stage").toHaveText("EN CURSO");
         expect(csv).toInclude('"Levantamiento";"01/09/2026";"03/09/2026";"3 días";"Retrasada"');
         expect(csv).toInclude("Levantamiento");
         expect(csv).toInclude("Total del proyecto");

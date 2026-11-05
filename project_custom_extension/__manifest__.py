@@ -1,7 +1,7 @@
 {
     "name": "Extensión personalizada de proyectos",
     "summary": "Fechas planeadas, garantías, registro de horas y migración del flujo de subtareas",
-    "version": "18.0.1.13.0",
+    "version": "18.0.1.14.0",
     "category": "Services/Project",
     "author": "TDP",
     "license": "LGPL-3",
@@ -12,6 +12,7 @@
         "data/project_warranty.xml",
         "data/project_task_unified_stage.xml",
         "data/project_time_entry_alerts.xml",
+        "data/project_holidays.xml",
         "views/res_config_settings_views.xml",
         "views/project_dashboard_views.xml",
         "views/project_detail_dashboard_views.xml",
@@ -24,6 +25,7 @@
         "views/project_deliverable_views.xml",
         "views/project_task_unified_stage_views.xml",
         "views/project_task_time_entry_views.xml",
+        "views/project_service_views.xml",
     ],
     "assets": {
         "web.assets_backend": [

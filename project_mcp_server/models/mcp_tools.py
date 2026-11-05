@@ -349,6 +349,9 @@ class ProjectMcpServerTools(models.AbstractModel):
             "manager": _ref(project.user_id),
             "company_type": project.company_type or None,
             "status": project.last_update_status,
+            "status_label": dict(
+                project._fields["last_update_status"]._description_selection(self.env)
+            ).get(project.last_update_status),
             "weighted_progress": round(project.weighted_progress, 2),
             "date_start": project.date_start,
             "date_end": project.date,

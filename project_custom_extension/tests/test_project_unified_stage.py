@@ -149,13 +149,38 @@ class TestSubtaskDefaultDates(TransactionCase):
         self.assertEqual(defaults["planned_date_begin"], self.now)
         self.assertEqual(defaults["date_deadline"], self.parent.date_deadline)
 
-    def test_default_get_with_overdue_or_undated_parent_only_sets_start(self):
-        for deadline in (self.now - timedelta(days=1), False):
-            with self.subTest(deadline=deadline):
-                self.parent.date_deadline = deadline
-                defaults = self._defaults(self.parent)
-                self.assertEqual(defaults["planned_date_begin"], self.now)
-                self.assertFalse(defaults.get("date_deadline"))
+    def test_default_get_with_undated_parent_only_sets_start(self):
+        self.parent.date_deadline = False
+        defaults = self._defaults(self.parent)
+        self.assertEqual(defaults["planned_date_begin"], self.now)
+        self.assertFalse(defaults.get("date_deadline"))
+
+    def test_default_get_with_overdue_parent_copies_its_end(self):
+        """Tarea 2403: el fin es el del padre aunque ya haya pasado."""
+        overdue = self.now - timedelta(days=1)
+        self.parent.date_deadline = overdue
+        defaults = self._defaults(self.parent)
+        self.assertEqual(defaults["date_deadline"], overdue)
+        # The start cannot fall after the end.
+        self.assertEqual(defaults["planned_date_begin"], overdue)
+
+    def test_default_get_uses_the_unsaved_parent_end_from_context(self):
+        """From the parent form the current (maybe unsaved) end is sent."""
+        unsaved_end = self.now + timedelta(days=3)
+        with patch.object(fields.Datetime, "now", return_value=self.now):
+            defaults = self.Task.with_context(
+                default_parent_id=False,
+                default_date_deadline=fields.Datetime.to_string(unsaved_end),
+            ).default_get(["planned_date_begin", "date_deadline"])
+        self.assertEqual(
+            fields.Datetime.to_datetime(defaults["date_deadline"]), unsaved_end
+        )
+
+    def test_parent_form_passes_its_end_date_to_subtasks(self):
+        arch = self.Task.get_view(
+            self.env.ref("project.view_task_form2").id, "form"
+        )["arch"]
+        self.assertIn("'default_date_deadline': date_deadline", arch)
 
     def test_default_get_without_parent_proposes_nothing(self):
         defaults = self.Task.default_get(["planned_date_begin", "date_deadline"])
@@ -186,8 +211,8 @@ class TestSubtaskDefaultDates(TransactionCase):
         self.assertEqual(subtask.date_deadline, self.parent.date_deadline)
         self.assertFalse(explicit.planned_date_begin)
         self.assertFalse(explicit.date_deadline)
-        # A start after the chosen deadline would be invalid: it is not set.
-        self.assertFalse(past_deadline.planned_date_begin)
+        # A start after the chosen deadline would be invalid: it starts on it.
+        self.assertEqual(past_deadline.planned_date_begin, past_deadline.date_deadline)
 
     def test_subtasks_created_from_the_parent_form_get_dates(self):
         with patch.object(fields.Datetime, "now", return_value=self.now):

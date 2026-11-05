@@ -68,6 +68,27 @@
                         </div>
                     </setting>
                 </block>
+                <block title="Registro de horas" id="project_time_entry_settings">
+                    <setting id="project_time_alert_reminder"
+                             help="Viernes 3 p. m.: correo a cada persona con los días de la semana (hasta el jueves) en que no registró horas.">
+                        <field name="project_time_alert_reminder"/>
+                    </setting>
+                    <setting id="project_time_alert_summary"
+                             help="Lunes 8 a. m.: correo a los gerentes con todo el equipo y a cada PM con las personas de sus proyectos que no registraron horas la semana anterior.">
+                        <field name="project_time_alert_summary"/>
+                    </setting>
+                    <setting id="project_time_holidays"
+                             string="Festivos"
+                             help="Los festivos de Colombia se cargan cada año como ausencias globales del horario laboral (pestaña Ausencias). En el registro de horas cuentan como horas cumplidas.">
+                        <div class="mt8">
+                            <button name="%(resource.action_resource_calendar_form)d"
+                                    type="action"
+                                    string="Horarios laborales y festivos"
+                                    class="btn-link"
+                                    icon="oi-arrow-right"/>
+                        </div>
+                    </setting>
+                </block>
             </xpath>
         </field>
     </record>

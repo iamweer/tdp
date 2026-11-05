@@ -98,10 +98,12 @@
                             </th>
                             <th t-foreach="days" t-as="day" t-key="day.date" scope="col"
                                 t-att-data-date="day.date"
-                                t-attf-class="o_ts_grid_day #{day.is_weekend ? 'o_ts_grid_weekend' : ''} #{day.is_today ? 'o_ts_grid_today' : ''}">
+                                t-att-title="day.holiday ? 'Festivo: ' + day.holiday : undefined"
+                                t-attf-class="o_ts_grid_day #{day.is_weekend ? 'o_ts_grid_weekend' : ''} #{day.is_today ? 'o_ts_grid_today' : ''} #{day.holiday ? 'o_ts_grid_holiday' : ''}">
                                 <t t-set="parts" t-value="dayParts(day)"/>
                                 <span class="o_ts_grid_weekday" t-out="parts.weekday"/>
                                 <span class="o_ts_grid_daylabel" t-out="parts.label"/>
+                                <span t-if="day.holiday" class="o_ts_grid_holiday_name" t-out="day.holiday"/>
                             </th>
                             <th class="o_ts_grid_total_col" scope="col">Tiempo utilizado</th>
                         </tr>
@@ -127,12 +129,14 @@
                                           t-out="initial(group.name)"/>
                                     <span class="o_ts_grid_group_name" t-att-title="group.name" t-out="group.name"/>
                                 </button>
-                                <span t-if="group.company_type" class="o_ts_grid_badge" t-out="companyLabel(group.company_type)"/>
-                                <span t-if="group.balance !== false"
-                                      t-attf-class="o_ts_grid_balance #{group.balance &lt; 0 ? 'o_ts_grid_balance--negative' : ''}"
-                                      t-att-title="'Esperado en el periodo: ' + formatHours(group.expected)">
-                                    <t t-out="(group.balance &gt; 0 ? '+' : '') + formatHours(group.balance)"/>
-                                </span>
+                                <div t-if="group.company_type or group.balance !== false" class="o_ts_grid_group_meta">
+                                    <span t-if="group.company_type" class="o_ts_grid_badge" t-out="companyLabel(group.company_type)"/>
+                                    <span t-if="group.balance !== false"
+                                          t-attf-class="o_ts_grid_balance #{group.balance &lt; 0 ? 'o_ts_grid_balance--negative' : ''}"
+                                          t-att-title="'Esperado en el periodo: ' + formatHours(group.expected)">
+                                        <t t-out="(group.balance &gt; 0 ? '+' : '') + formatHours(group.balance)"/>
+                                    </span>
+                                </div>
                             </th>
                             <td t-foreach="days" t-as="day" t-key="day.date"
                                 t-attf-class="o_ts_grid_cell #{groupCellClass(group, day)}"
@@ -147,14 +151,18 @@
                         <t t-if="!isCollapsed(group)">
                             <tr t-foreach="group.lines" t-as="line" t-key="line.key" class="o_ts_grid_line_row">
                                 <th scope="row" class="o_ts_grid_name_col o_ts_grid_line_name" t-att-title="line.name">
-                                    <span class="o_ts_grid_line_label" t-out="line.name"/>
+                                    <span t-attf-class="o_ts_grid_line_label #{line.is_holiday ? 'o_ts_grid_holiday_label' : ''}">
+                                        <i t-if="line.is_holiday" class="fa fa-calendar-check-o me-1" aria-hidden="true"/>
+                                        <t t-out="line.name"/>
+                                    </span>
                                 </th>
                                 <td t-foreach="days" t-as="day" t-key="day.date"
                                     t-attf-class="o_ts_grid_cell #{lineCellClass(line, day)}"
+                                    t-att-title="line.is_holiday and line.holiday_names[day.date] ? 'Festivo: ' + line.holiday_names[day.date] : undefined"
                                     t-on-click="() => this.openEntries({ group, line, day })">
                                     <t t-out="formatHours(line.daily[day.date])"/>
                                 </td>
-                                <td class="o_ts_grid_cell o_ts_grid_total_col"
+                                <td t-attf-class="o_ts_grid_cell o_ts_grid_total_col #{line.is_holiday ? 'o_ts_grid_holiday_line' : ''}"
                                     t-on-click="() => this.openEntries({ group, line })">
                                     <t t-out="formatHours(line.total)"/>
                                 </td>

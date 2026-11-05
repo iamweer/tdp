@@ -1,4 +1,5 @@
 import calendar
+import re
 from datetime import date, datetime, time, timedelta
 
 import pytz
@@ -74,6 +75,36 @@ GANTT_STATUS_ORDER = {
 
 # Las tareas internas no cuentan para el avance, los contadores ni los reportes.
 VISIBLE_TASK_DOMAIN = [("is_internal_task", "=", False)]
+
+# Etiqueta única del estado "at_risk" (estado de proyecto, actualizaciones y
+# semáforo automático de los dashboards).
+AT_RISK_LABEL = "En riesgo de atraso"
+
+_NATURAL_SORT_SPLIT = re.compile(r"(\d+)")
+
+
+def natural_sort_key(text):
+    """Clave de orden "natural": "Fase 2" va antes que "Fase 10"."""
+    return tuple(
+        (0, int(part), "") if part.isdigit() else (1, 0, part)
+        for part in _NATURAL_SORT_SPLIT.split((text or "").casefold())
+        if part
+    )
+
+
+def phase_sort_key(task):
+    """Orden de fases y tareas en indicadores y cronograma.
+
+    Por fecha de inicio planificada (las que no tienen fecha van al final),
+    luego por nombre en orden natural y por id. No usa ``sequence``: se
+    reescribe al arrastrar tarjetas en el kanban y desordenaba las fases.
+    """
+    return (
+        task.planned_date_begin or datetime.max,
+        natural_sort_key(task.name),
+        task.id,
+    )
+
 
 # Etapas que recibe cada proyecto nuevo: (nombre, plegada).
 DEFAULT_TASK_STAGES = (
@@ -235,6 +266,17 @@ class ProjectProject(models.Model):
         string="Periodo de garantía",
         compute="_compute_warranty_period_display",
     )
+    warranty_notify_partner_ids = fields.Many2many(
+        "res.partner",
+        "project_project_warranty_notify_partner_rel",
+        "project_id",
+        "partner_id",
+        string="Notificar fin de garantía a",
+        tracking=True,
+        domain="[('id', 'child_of', partner_id)] if partner_id else []",
+        help="Contactos del cliente que reciben un correo cuando termina la "
+        "garantía, además del aviso interno al gerente del proyecto.",
+    )
     warranty_auto_closed_on = fields.Date(
         string="Cierre automático por garantía",
         readonly=True,
@@ -245,6 +287,10 @@ class ProjectProject(models.Model):
         COMPANY_TYPE_SELECTION,
         string="Empresa",
         tracking=True,
+    )
+    # Same wording as the automatic schedule status of the dashboards.
+    last_update_status = fields.Selection(
+        selection_add=[("at_risk", AT_RISK_LABEL)],
     )
     main_task_ids = fields.One2many(
         "project.task",
@@ -372,7 +418,7 @@ class ProjectProject(models.Model):
             if task.parent_id and task.state != "1_canceled":
                 children_by_parent.setdefault(task.parent_id.id, []).append(task)
         phases = tasks.filtered(lambda task: not task.parent_id).sorted(
-            lambda task: (task.sequence, task.name or "", task.id)
+            phase_sort_key
         )
         if not phases:
             return {"percentage": False, "phases": []}
@@ -481,6 +527,9 @@ class ProjectProject(models.Model):
         template = self.env.ref(
             "project_custom_extension.mail_template_warranty_completion"
         )
+        customer_template = self.env.ref(
+            "project_custom_extension.mail_template_warranty_completion_customer"
+        )
 
         for project in projects:
             recipients = (project.user_id | victor) if victor else project.user_id
@@ -521,6 +570,20 @@ class ProjectProject(models.Model):
                         email_values={"email_to": email_address},
                     )
                     queued_email_addresses.add(email_address.casefold())
+            # Customer contacts configured on the project (tarea 2366).
+            for partner in project.warranty_notify_partner_ids:
+                email_address = partner.email.strip() if partner.email else False
+                if not email_address:
+                    missing.append(partner.display_name)
+                    continue
+                if email_address.casefold() in queued_email_addresses:
+                    continue
+                customer_template.send_mail(
+                    project.id,
+                    force_send=False,
+                    email_values={"email_to": email_address},
+                )
+                queued_email_addresses.add(email_address.casefold())
             if not victor:
                 missing.append(WARRANTY_VICTOR_LOGIN)
             if missing:
@@ -920,7 +983,7 @@ class ProjectProject(models.Model):
             ("project_id", "=", project.id),
             ("active", "=", True),
             *VISIBLE_TASK_DOMAIN,
-        ], order="sequence, name, id")
+        ]).sorted(phase_sort_key)
         task_by_id = {task.id: task for task in tasks}
         parent_by_id = {}
         children_by_parent = {}
@@ -1076,6 +1139,9 @@ class ProjectProject(models.Model):
                     "color_index": root_color_indexes[current_root_id],
                     "status": status_by_id[task.id],
                     "status_label": status_labels[status_by_id[task.id]],
+                    "stage_name": (
+                        task.unified_stage_id.name or task.stage_id.name or ""
+                    ),
                 })
                 append_rows(task.id, depth + 1, current_root_id)
 
@@ -1130,15 +1196,19 @@ class ProjectProject(models.Model):
             reference_date = date(year, month, calendar.monthrange(year, month)[1])
         except (TypeError, ValueError):
             return None
-        if (year, month) == (today.year, today.month):
-            return today
-        return reference_date
+        # The current or a future month is measured today: tasks due later
+        # are not overdue yet.
+        return min(reference_date, today)
 
     @api.model
     def _dashboard_local_day_start(self, day):
-        """UTC naive datetime at which ``day`` starts in the user's timezone."""
+        """UTC naive datetime at which ``day`` starts in the user's timezone.
+
+        Users without a timezone use the company's (Bogotá), not UTC: with UTC
+        the day would change at 19:00 local time.
+        """
         timezone = pytz.timezone(
-            self.env.context.get("tz") or self.env.user.tz or "UTC"
+            self.env.context.get("tz") or self.env.user.tz or WARRANTY_TIMEZONE
         )
         local_start = timezone.localize(datetime.combine(day, time.min))
         return local_start.astimezone(pytz.utc).replace(tzinfo=None)
@@ -1417,8 +1487,13 @@ class ProjectProject(models.Model):
                 "domain": [*open_subtask_domain, ("user_ids", "=", False)],
             })
 
-        # Upcoming commitments: open subtasks by deadline, overdue first.
-        commitment_domain = [*open_subtask_domain, ("date_deadline", "!=", False)]
+        # Upcoming commitments: open subtasks due from the cutoff on, nearest
+        # first. Overdue ones are already counted in "Tareas vencidas" and
+        # would otherwise hide the real upcoming commitments.
+        commitment_domain = [
+            *open_subtask_domain,
+            ("date_deadline", ">=", reference_string),
+        ]
         commitments = []
         for task in Task.search(
             commitment_domain,
@@ -1590,11 +1665,16 @@ class ProjectProject(models.Model):
             *pending_domain,
             ("date_commitment", "<", fields.Date.to_string(reference_date)),
         ]
+        # At a past cutoff, a deliverable handed over later was still pending.
         counts = {}
-        for phase, state, count in Deliverable._read_group(
-            domain, ["phase_id", "state"], ["__count"]
-        ):
-            counts.setdefault(phase.id, {})[state] = count
+        for deliverable in Deliverable.search(domain):
+            delivered = deliverable.state == "delivered" and not (
+                deliverable.date_delivered
+                and deliverable.date_delivered > reference_date
+            )
+            state = "delivered" if delivered else "pending"
+            phase_counts = counts.setdefault(deliverable.phase_id.id, {})
+            phase_counts[state] = phase_counts.get(state, 0) + 1
 
         def percentage(done, total):
             return round(done * 100 / total, 1) if total else 0.0
@@ -1686,10 +1766,18 @@ class ProjectProject(models.Model):
         if partner_id:
             project_domain.append(("partner_id", "=", partner_id))
         date_from, date_to = self._dashboard_date_range(date_from, date_to)
+        # A project without end date is still open; one without start date is
+        # placed by its end date. Projects with no dates at all are left out.
         if date_to:
-            project_domain.append(("date_start", "<=", date_to))
+            project_domain = expression.AND([project_domain, expression.OR([
+                [("date_start", "<=", date_to)],
+                [("date_start", "=", False), ("date", "!=", False)],
+            ])])
         if date_from:
-            project_domain.append(("date", ">=", date_from))
+            project_domain = expression.AND([project_domain, expression.OR([
+                [("date", ">=", date_from)],
+                [("date", "=", False), ("date_start", "!=", False)],
+            ])])
         projects = Project.search(project_domain)
 
         progress_by_project = self._get_project_execution_progress_by_project(
@@ -1708,6 +1796,7 @@ class ProjectProject(models.Model):
             "customer_name": project.partner_id.display_name or "",
             "progress": progress_by_project[project.id]["percentage"],
             "expected_progress": self._project_expected_progress(project, today),
+            "deviation": schedule_by_project[project.id]["deviation"],
             "status": schedule_by_project[project.id]["key"],
             "status_label": schedule_by_project[project.id]["label"],
             "status_detail": schedule_by_project[project.id]["detail"],
@@ -1764,12 +1853,14 @@ class ProjectProject(models.Model):
         if date_from or date_to:
             task_domain.append(("project_id", "in", projects.ids))
 
-        # Tasks due today are not overdue until the day is over.
+        # Tasks due today are not overdue until the day is over; "upcoming"
+        # covers today and the next 7 local days, whole days.
+        local_today = fields.Date.context_today(self)
         current_datetime = fields.Datetime.to_string(
-            self._dashboard_local_day_start(fields.Date.context_today(self))
+            self._dashboard_local_day_start(local_today)
         )
         upcoming_datetime = fields.Datetime.to_string(
-            fields.Datetime.now() + timedelta(days=7)
+            self._dashboard_local_day_start(local_today + timedelta(days=8))
         )
         alert_definitions = (
             (
@@ -1786,7 +1877,7 @@ class ProjectProject(models.Model):
                 "fa-calendar",
                 [
                     ("date_deadline", ">=", current_datetime),
-                    ("date_deadline", "<=", upcoming_datetime),
+                    ("date_deadline", "<", upcoming_datetime),
                 ],
             ),
             (
@@ -2000,3 +2091,9 @@ class ProjectProject(models.Model):
             },
             "today": fields.Date.to_string(today),
         }
+
+
+class ProjectUpdate(models.Model):
+    _inherit = "project.update"
+
+    status = fields.Selection(selection_add=[("at_risk", AT_RISK_LABEL)])

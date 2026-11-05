@@ -696,14 +696,13 @@ class TestProjectDashboard(TransactionCase):
             },
         )
 
+        # Upcoming commitments only (tarea 2477): the overdue subtask is
+        # counted in "Tareas vencidas", not here.
         commitments = data["commitments"]
-        self.assertEqual(commitments["count"], 2)
+        self.assertEqual(commitments["count"], 1)
         self.assertEqual(
             [(item["id"], item["status"]) for item in commitments["items"]],
-            [
-                (self.critical_subtask.id, "overdue"),
-                (self.upcoming_subtask.id, "at_risk"),
-            ],
+            [(self.upcoming_subtask.id, "at_risk")],
         )
 
         risk = data["risks"]["items"][0]

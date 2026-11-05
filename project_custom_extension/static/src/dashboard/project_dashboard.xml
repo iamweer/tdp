@@ -150,13 +150,20 @@
                                                title="Avance esperado según las fechas del proyecto">
                                             Esp. <t t-if="project.expected_progress !== false"><t t-out="formatPercentage(project.expected_progress)"/>%</t><t t-else="">—</t>
                                         </small>
+                                        <small t-if="project.deviation !== false and project.deviation !== undefined"
+                                               t-attf-class="o_project_dashboard_progress_deviation o_project_dashboard_progress_deviation--#{project.deviation &lt; 0 ? 'behind' : 'ahead'}"
+                                               title="Desviación: avance real menos esperado, en puntos">
+                                            Desv. <t t-out="(project.deviation &gt; 0 ? '+' : '') + formatPercentage(project.deviation)"/> pts
+                                        </small>
                                     </span>
                                     <i class="fa fa-chevron-right" aria-hidden="true"/>
                                 </button>
                             </div>
                             <div t-else="" class="o_project_dashboard_empty">
                                 <i class="fa fa-folder-open-o" aria-hidden="true"/>
-                                <p>No hay proyectos activos para este cliente.</p>
+                                <p t-if="state.data.date_from or state.data.date_to">No hay proyectos activos en el periodo seleccionado.</p>
+                                <p t-elif="state.data.selected_customer">No hay proyectos activos para este cliente.</p>
+                                <p t-else="">No hay proyectos activos.</p>
                             </div>
                         </section>
 

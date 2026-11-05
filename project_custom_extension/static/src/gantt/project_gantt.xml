@@ -264,6 +264,10 @@
                                       t-att-style="'background-color: ' + colorForStatus(row.status)"/>
                                 <t t-out="row.status_label"/>
                             </span>
+                            <span t-if="row.stage_name"
+                                  class="o_project_gantt_stage"
+                                  t-att-title="'Etapa: ' + row.stage_name"
+                                  t-out="row.stage_name"/>
                         </div>
                         <div class="o_project_gantt_timeline_cell" t-att-style="timelineStyle" role="cell">
                             <div class="o_project_gantt_timeline_grid" t-att-style="gridTemplateStyle">

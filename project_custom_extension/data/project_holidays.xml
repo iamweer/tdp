@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Cada mes: carga los festivos de Colombia del año actual y del
+         siguiente si aún no están (no duplica ni toca los ya cargados).
+         Sin actualización para que un -u no reprograme la próxima ejecución. -->
+    <data noupdate="1">
+    <record id="ir_cron_sync_colombia_holidays" model="ir.cron">
+        <field name="name">Horas: cargar festivos de Colombia</field>
+        <field name="model_id" ref="resource.model_resource_calendar"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_sync_colombia_holidays()</field>
+        <field name="user_id" ref="base.user_root"/>
+        <field name="interval_number">1</field>
+        <field name="interval_type">months</field>
+        <field name="nextcall" eval="(DateTime.today() + relativedelta(months=1, day=1)).strftime('%Y-%m-%d 11:00:00')"/>
+        <field name="active" eval="True"/>
+    </record>
+    </data>
+</odoo>

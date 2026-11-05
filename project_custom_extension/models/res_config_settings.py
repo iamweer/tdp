@@ -43,6 +43,41 @@ class ResConfigSettings(models.TransientModel):
         default=SCHEDULE_RISK_DEVIATION_DEFAULT,
     )
 
+    # Weekly time alerts: each switch turns its scheduled action on or off.
+    project_time_alert_reminder = fields.Boolean(
+        string="Recordatorio semanal de registro de horas",
+        help="Viernes: correo a cada persona con los días de la semana sin horas.",
+    )
+    project_time_alert_summary = fields.Boolean(
+        string="Resumen semanal de faltantes para gerentes y PM",
+        help="Lunes: correo a gerentes y PM con quién no registró horas la "
+        "semana anterior.",
+    )
+
+    TIME_ALERT_CRONS = {
+        "project_time_alert_reminder":
+            "project_custom_extension.ir_cron_remind_missing_hours",
+        "project_time_alert_summary":
+            "project_custom_extension.ir_cron_notify_missing_hours_summary",
+    }
+
+    @api.model
+    def get_values(self):
+        values = super().get_values()
+        for field_name, xmlid in self.TIME_ALERT_CRONS.items():
+            cron = self.env.ref(xmlid, raise_if_not_found=False)
+            values[field_name] = bool(cron and cron.sudo().active)
+        return values
+
+    def set_values(self):
+        super().set_values()
+        if not self.env.user.has_group("base.group_system"):
+            return
+        for field_name, xmlid in self.TIME_ALERT_CRONS.items():
+            cron = self.env.ref(xmlid, raise_if_not_found=False)
+            if cron and cron.sudo().active != self[field_name]:
+                cron.sudo().active = self[field_name]
+
     @api.constrains(
         "project_dashboard_progress_weight",
         "project_dashboard_status_weight",

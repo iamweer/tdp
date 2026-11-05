@@ -180,3 +180,4 @@ def post_init_hook(env):
     env["project.project"]._ensure_warranty_automation_activation_date()
     mark_resolved_stage_tasks_done(env)
     assign_unified_stages(env)
+    env["resource.calendar"]._tdp_sync_colombia_holidays()

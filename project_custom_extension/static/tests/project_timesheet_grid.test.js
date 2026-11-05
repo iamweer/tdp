@@ -180,4 +180,54 @@ describe("resumen de horas", () => {
             ["project_id", "=", 20],
         ]);
     });
+
+    test("holidays are credited on their own line and do not open entries", async () => {
+        mockService("orm", {
+            call(model, method, args, kwargs) {
+                const payload = makePayload(kwargs.group_by);
+                payload.days[0].holiday = "Día de la Raza";
+                const [ana] = payload.groups;
+                ana.missing_days = [];
+                ana.lines.push({
+                    key: "holiday",
+                    name: "Festivo",
+                    employee_id: false,
+                    project_id: false,
+                    is_holiday: true,
+                    holiday_names: { "2026-01-05": "Día de la Raza" },
+                    daily: { "2026-01-05": 8 },
+                    total: 8,
+                });
+                return payload;
+            },
+        });
+        const component = await mountWithCleanup(ProjectTimesheetGrid, {
+            noMainContainer: true,
+        });
+        expect(".o_ts_grid_holiday_label").toHaveCount(1);
+        expect(".o_ts_grid_holiday_label").toHaveText("Festivo");
+        expect("th.o_ts_grid_day.o_ts_grid_holiday").toHaveCount(1);
+        expect(".o_ts_grid_holiday_name").toHaveText("Día de la Raza");
+
+        const [ana] = component.groups;
+        const holidayLine = ana.lines.find((line) => line.is_holiday);
+        component.openEntries({ group: ana, line: holidayLine, day: component.days[0] });
+        expect(executedActions).toHaveLength(0);
+    });
+
+    test("customer grouping drills down by the customer company", async () => {
+        const component = await mountWithCleanup(ProjectTimesheetGrid, {
+            noMainContainer: true,
+        });
+        await component.setPreference("groupBy", "customer");
+        await animationFrame();
+        const [group] = component.groups;
+        component.openEntries({ group });
+        const domain = executedActions.at(-1).domain;
+        expect(
+            domain.some(([field, operator, value]) =>
+                field === "customer_id" && operator === "=" && value === group.key
+            )
+        ).toBe(true);
+    });
 });

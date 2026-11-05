@@ -344,6 +344,9 @@ export class ProjectTimesheetGrid extends Component {
         if (day.is_today) {
             classes.push("o_ts_grid_today");
         }
+        if (day.holiday) {
+            classes.push("o_ts_grid_holiday");
+        }
         if (group.missing_days.includes(day.date)) {
             classes.push("o_ts_grid_missing");
         } else if (!group.daily[day.date]) {
@@ -359,6 +362,12 @@ export class ProjectTimesheetGrid extends Component {
         }
         if (day.is_today) {
             classes.push("o_ts_grid_today");
+        }
+        if (line.is_holiday) {
+            classes.push("o_ts_grid_holiday_line");
+            if (line.daily[day.date]) {
+                classes.push("o_ts_grid_holiday");
+            }
         }
         if (!line.daily[day.date]) {
             classes.push("o_ts_grid_zero");
@@ -388,7 +397,7 @@ export class ProjectTimesheetGrid extends Component {
             employee: "employee_id",
             project: "project_id",
             company: "company_type",
-            customer: "partner_id",
+            customer: "customer_id",
         }[this.state.data.group_by];
         if (field === "company_type") {
             return [[field, "=", group.key === "none" ? false : group.key]];
@@ -417,6 +426,10 @@ export class ProjectTimesheetGrid extends Component {
     }
 
     openEntries({ group = false, line = false, day = false } = {}) {
+        if (line?.is_holiday) {
+            // Credited holiday hours are not time entries.
+            return;
+        }
         const data = this.state.data;
         const domain = [...this.baseDomain()];
         if (day) {

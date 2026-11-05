@@ -117,13 +117,14 @@ function csvCell(value) {
 
 export function buildProjectGanttCsv(rows, total = false) {
     const lines = [
-        ["Actividad", "Inicio", "Fin", "Duración", "Estado"],
+        ["Actividad", "Inicio", "Fin", "Duración", "Estado", "Etapa"],
         ...rows.map((row) => [
             row.name,
             formatCsvDate(row.start_date),
             formatCsvDate(row.end_date),
             formatCsvDuration(row.duration_days),
             row.status_label || "",
+            row.stage_name || "",
         ]),
     ];
     if (total) {
@@ -132,6 +133,7 @@ export function buildProjectGanttCsv(rows, total = false) {
             formatCsvDate(total.start_date),
             formatCsvDate(total.end_date),
             formatCsvDuration(total.duration_days),
+            "",
             "",
         ]);
     }

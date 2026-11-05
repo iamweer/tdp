@@ -21,7 +21,7 @@ class ProjectDeliverable(models.Model):
         required=True,
         ondelete="cascade",
         index=True,
-        domain="[('parent_id', '=', False)]",
+        domain="[('parent_id', '=', False), ('is_internal_task', '=', False)]",
     )
     project_id = fields.Many2one(
         related="phase_id.project_id",
@@ -63,6 +63,19 @@ class ProjectDeliverable(models.Model):
         return super().create(vals_list)
 
     def write(self, vals):
+        if vals.get("state") == "delivered" and not vals.get("date_delivered"):
+            # Marking as delivered again (e.g. clicking the status twice or
+            # editing another column) keeps the original delivery date; only
+            # deliverables without one get today.
+            vals = {key: value for key, value in vals.items() if key != "date_delivered"}
+            undated = self.filtered(lambda deliverable: not deliverable.date_delivered)
+            result = super().write(vals)
+            if undated:
+                super(ProjectDeliverable, undated).write({
+                    "date_delivered": fields.Date.context_today(self),
+                })
+            return result
+        vals = dict(vals)
         self._fill_date_delivered(vals)
         return super().write(vals)
 

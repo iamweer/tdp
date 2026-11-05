@@ -6,3 +6,5 @@ from . import project_task_unified_stage
 from . import project_task_time_entry
 from . import hr_employee
 from . import res_config_settings
+from . import resource_calendar
+from . import project_service

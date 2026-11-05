@@ -381,7 +381,7 @@
                                     </tbody>
                                 </table>
                             </div>
-                            <p t-else="" class="o_project_detail_dashboard_empty_text">No hay tareas abiertas con fecha límite.</p>
+                            <p t-else="" class="o_project_detail_dashboard_empty_text">No hay compromisos abiertos por vencer.</p>
                         </section>
 
                         <section class="o_project_detail_dashboard_card o_project_detail_dashboard_panel">

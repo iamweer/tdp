@@ -8,6 +8,11 @@
             <field name="date" position="after">
                 <field name="warranty_start_date"/>
                 <field name="warranty_end_date"/>
+                <field name="warranty_notify_partner_ids"
+                       widget="many2many_tags_email"
+                       options="{'no_quick_create': True}"
+                       context="{'default_parent_id': partner_id, 'show_email': True}"
+                       placeholder="Contactos del cliente a notificar"/>
                 <field name="company_type"/>
             </field>
             <page name="description" position="after">

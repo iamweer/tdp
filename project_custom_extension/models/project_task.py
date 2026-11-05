@@ -254,18 +254,19 @@ class ProjectTask(models.Model):
 
     @api.model
     def _get_subtask_default_dates(self, parent, deadline=False):
-        """Start a subtask now and end it with its parent, if still ahead.
+        """Start a subtask now and end it with its parent.
 
-        ``deadline`` is the end date already chosen for the subtask: the start
-        is not proposed when it would fall after it.
+        ``deadline`` is the end date already chosen for the subtask. The end
+        date of the parent is proposed even when it already passed, so the
+        subtask shows as overdue like its parent. The start never falls after
+        the end: when the end already passed, the subtask starts on it.
         """
         now = fields.Datetime.now()
         values = {}
-        if not deadline and parent and parent.date_deadline and parent.date_deadline > now:
+        if not deadline and parent and parent.date_deadline:
             values["date_deadline"] = parent.date_deadline
         end = fields.Datetime.to_datetime(deadline) or values.get("date_deadline")
-        if not end or end >= now:
-            values["planned_date_begin"] = now
+        values["planned_date_begin"] = min(now, end) if end else now
         return values
 
     def unlink(self):

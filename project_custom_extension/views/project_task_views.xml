@@ -24,6 +24,21 @@
                        widget="boolean_toggle"
                        groups="project.group_project_manager"/>
             </xpath>
+            <!-- Subtareas: proponer como fin la fecha fin actual del padre,
+                 aunque el padre aún no esté guardado. -->
+            <xpath expr="//field[@name='child_ids']" position="attributes">
+                <attribute name="context">{
+                    'default_project_id': project_id,
+                    'default_display_in_project': False,
+                    'default_user_ids': user_ids,
+                    'default_parent_id': id,
+                    'default_partner_id': partner_id,
+                    'default_milestone_id': allow_milestones and milestone_id,
+                    'default_date_deadline': date_deadline,
+                    'kanban_view_ref': 'project.project_sub_task_view_kanban_mobile',
+                    'closed_X2M_count': closed_subtask_count,
+                }</attribute>
+            </xpath>
             <xpath expr="//notebook/page[@name='description_page']" position="after">
                 <page name="deliverables_page" string="Entregables" invisible="parent_id">
                     <field name="deliverable_ids">

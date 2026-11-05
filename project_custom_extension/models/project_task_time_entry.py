@@ -23,7 +23,7 @@ TIME_GRID_GROUPINGS = {
     "employee": ("employee_id", "project_id"),
     "project": ("project_id", "employee_id"),
     "company": ("company_type", "employee_id"),
-    "customer": ("partner_id", "project_id"),
+    "customer": ("customer_id", "project_id"),
 }
 
 
@@ -49,6 +49,14 @@ class ProjectTaskTimeEntry(models.Model):
         related="project_id.partner_id",
         string="Cliente",
         store=True,
+    )
+    # Company of the customer: contacts of one company are grouped together.
+    customer_id = fields.Many2one(
+        "res.partner",
+        related="project_id.partner_id.commercial_partner_id",
+        string="Empresa cliente",
+        store=True,
+        index=True,
     )
     company_id = fields.Many2one(
         related="task_id.company_id",
@@ -195,7 +203,7 @@ class ProjectTaskTimeEntry(models.Model):
         if group_by_field == "project_id":
             # The entry is readable, its project may not be (archived).
             return (value.id or 0, value.sudo().display_name or _("Sin proyecto"))
-        if group_by_field == "partner_id":
+        if group_by_field in ("partner_id", "customer_id"):
             return (value.id or 0, value.sudo().display_name or _("Sin cliente"))
         return (value.id or 0, value.sudo().name or _("Sin empleado"))
 
@@ -216,6 +224,36 @@ class ProjectTaskTimeEntry(models.Model):
             employee_id: {day: hours for day, hours in days}
             for employee_id, days in work_time.items()
         }
+
+    @api.model
+    def _time_grid_holidays(self, employees, date_from, date_to):
+        """Festivos laborables por empleado: ``{employee_id: {fecha: (horas, nombre)}}``.
+
+        Las horas son las del horario del empleado ese día de la semana: un
+        festivo en fin de semana no suma nada.
+        """
+        result = {}
+        holidays_by_calendar = {}
+        for employee in employees.sudo():
+            calendar = (
+                employee.resource_calendar_id
+                or employee.company_id.resource_calendar_id
+            )
+            if not calendar:
+                continue
+            if calendar not in holidays_by_calendar:
+                holidays_by_calendar[calendar] = {
+                    day: (calendar._tdp_weekday_hours(day.weekday()), name)
+                    for day, name in calendar._tdp_holidays(date_from, date_to).items()
+                }
+            holidays = {
+                day: values
+                for day, values in holidays_by_calendar[calendar].items()
+                if values[0]
+            }
+            if holidays:
+                result[employee.id] = holidays
+        return result
 
     @api.model
     def _time_grid_roster(self, filters):
@@ -263,6 +301,11 @@ class ProjectTaskTimeEntry(models.Model):
         if filters.get("company_type"):
             domain.append(("company_type", "=", filters["company_type"]))
 
+        company_calendar = self.env.company.resource_calendar_id
+        company_holidays = (
+            company_calendar._tdp_holidays(date_from, date_to)
+            if company_calendar else {}
+        )
         days = []
         day = date_from
         while day <= date_to:
@@ -270,6 +313,7 @@ class ProjectTaskTimeEntry(models.Model):
                 "date": fields.Date.to_string(day),
                 "is_weekend": day.weekday() >= 5,
                 "is_today": day == today,
+                "holiday": company_holidays.get(day, False),
             })
             day += timedelta(days=1)
 
@@ -313,6 +357,7 @@ class ProjectTaskTimeEntry(models.Model):
                 "name": second_name,
                 "employee_id": second_value.id if second_field == "employee_id" else False,
                 "project_id": second_value.id if second_field == "project_id" else False,
+                "is_holiday": False,
                 "daily": defaultdict(float),
                 "total": 0.0,
             })
@@ -333,12 +378,37 @@ class ProjectTaskTimeEntry(models.Model):
             for employee in employees.sudo():
                 get_group(employee.id, employee.name, employee)
             expected = self._time_grid_expected_hours(employees, date_from, date_to)
+            holidays = self._time_grid_holidays(employees, date_from, date_to)
             for group in groups.values():
                 employee = employees.sudo().browse(group["employee_id"])
                 group["company_type"] = employee.company_type or False
                 expected_by_day = expected.get(employee.id)
                 if expected_by_day is None:
                     continue
+                # Holidays count as worked hours (tarea 2595): the calendar
+                # removes them from the expected hours, so they are added back
+                # as expected and credited as a "Festivo" line.
+                employee_holidays = holidays.get(employee.id, {})
+                if employee_holidays:
+                    holiday_line = group["lines"].setdefault("holiday", {
+                        "key": "holiday",
+                        "name": _("Festivo"),
+                        "employee_id": False,
+                        "project_id": False,
+                        "is_holiday": True,
+                        "holiday_names": {},
+                        "daily": defaultdict(float),
+                        "total": 0.0,
+                    })
+                    for holiday, (hours, holiday_name) in employee_holidays.items():
+                        day_key = fields.Date.to_string(holiday)
+                        expected_by_day[holiday] = hours
+                        holiday_line["daily"][day_key] += hours
+                        holiday_line["total"] += hours
+                        holiday_line["holiday_names"][day_key] = holiday_name
+                        group["daily"][day_key] += hours
+                        group["total"] += hours
+                        totals_daily[day_key] += hours
                 expected_to_date = sum(
                     hours for day, hours in expected_by_day.items() if day <= today
                 )
@@ -358,7 +428,7 @@ class ProjectTaskTimeEntry(models.Model):
         def serialize_lines(lines):
             return sorted(
                 (dict(line, daily=dict(line["daily"])) for line in lines.values()),
-                key=lambda line: line["name"].lower(),
+                key=lambda line: (line["is_holiday"], line["name"].lower()),
             )
 
         serialized_groups = sorted(
@@ -438,11 +508,19 @@ class ProjectTaskTimeEntry(models.Model):
         ):
             logged[employee.id][fields.Date.to_date(day)] += hours
 
+        holidays = self._time_grid_holidays(employees, date_from, date_to)
         result = {}
         for employee in employees:
             expected_by_day = expected.get(employee.id)
             if not expected_by_day:
                 continue
+            # Holidays are not working days, even if the calendar did not
+            # subtract a global leave for them.
+            employee_holidays = holidays.get(employee.id, {})
+            expected_by_day = {
+                day: hours for day, hours in expected_by_day.items()
+                if day not in employee_holidays
+            }
             missing_days = sorted(
                 day for day, hours in expected_by_day.items()
                 if hours and not logged[employee.id].get(day)
@@ -499,24 +577,33 @@ class ProjectTaskTimeEntry(models.Model):
 
     @api.model
     def _cron_remind_missing_hours(self):
-        """Viernes: recuerda a cada persona los días de la semana sin horas."""
+        """Viernes: recuerda a cada persona los días de la semana sin horas.
+
+        No cuenta el día en curso: el recordatorio sale a media tarde y aún
+        hay tiempo de registrar las horas de hoy. Los festivos no cuentan.
+        """
         self = self.sudo().with_context(tz=TIME_ALERT_TIMEZONE)
         today = fields.Date.context_today(self)
         week_start = today - timedelta(days=today.weekday())
         missing = self._time_entry_missing_hours(
-            self._time_grid_roster({}), week_start, today
+            self._time_grid_roster({}), week_start, today - timedelta(days=1)
         )
         template = self.env.ref(
             "project_custom_extension.mail_template_missing_hours_reminder"
         )
         week_label = self._time_alert_week_label(week_start, today)
         grid_url = self._time_alert_grid_url()
+        sent = 0
         for employee, info in missing.items():
-            self._time_alert_send(template, employee.user_id, {
+            sent += self._time_alert_send(template, employee.user_id, {
                 "missing_row": self._time_alert_row(employee, info),
                 "week_label": week_label,
                 "grid_url": grid_url,
             })
+        _logger.info(
+            "Recordatorio de horas: %s personas con días sin registrar, %s correos.",
+            len(missing), sent,
+        )
         return True
 
     @api.model

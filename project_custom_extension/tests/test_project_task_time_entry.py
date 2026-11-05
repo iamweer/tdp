@@ -313,7 +313,9 @@ class TestProjectTaskTimeEntry(TransactionCase):
         bob_mail = self._alert_mails(self.bob)
         self.assertEqual(len(bob_mail), 1)
         self.assertIn("05/01 – 09/01/2026", bob_mail.subject)
-        self.assertIn("mar 06/01, jue 08/01, vie 09/01", bob_mail.body_html)
+        # The current day (Friday) is not reminded yet.
+        self.assertIn("mar 06/01, jue 08/01", bob_mail.body_html)
+        self.assertNotIn("vie 09/01", bob_mail.body_html)
         self.assertTrue(self._alert_mails(self.manager))
 
     def test_monday_summary_for_managers_and_project_pms(self):

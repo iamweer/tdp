@@ -127,6 +127,49 @@
         <field name="groups" eval="[(4, ref('project_custom_extension.group_project_client'))]"/>
     </record>
 
+    <!-- Observaciones del servicio (staffing): mismo alcance que los entregables. -->
+    <record id="project_service_observation_user_rule" model="ir.rule">
+        <field name="name">Observaciones: Usuario opera proyectos accesibles</field>
+        <field name="model_id" ref="project_custom_extension.model_project_service_observation"/>
+        <field name="domain_force">[('project_id.active', '=', True), '|', ('project_id.create_uid', '=', user.id), ('project_id.tasks', 'any', [('active', '=', True), ('user_ids', 'in', user.id)])] if not user.has_group('project_custom_extension.group_project_client') else [('id', '=', 0)]</field>
+        <field name="groups" eval="[(4, ref('project.group_project_user'))]"/>
+    </record>
+    <record id="project_service_observation_manager_rule" model="ir.rule">
+        <field name="name">Observaciones: Gerente administra todas</field>
+        <field name="model_id" ref="project_custom_extension.model_project_service_observation"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('project.group_project_manager'))]"/>
+    </record>
+    <record id="project_service_observation_client_rule" model="ir.rule">
+        <field name="name">Observaciones: Cliente consulta las de su empresa</field>
+        <field name="model_id" ref="project_custom_extension.model_project_service_observation"/>
+        <field name="domain_force">[('project_id.active', '=', True), ('project_id.partner_id.commercial_partner_id', '=', user.partner_id.commercial_partner_id.id)]</field>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+        <field name="groups" eval="[(4, ref('project_custom_extension.group_project_client'))]"/>
+    </record>
+
+    <!-- Sistemas por cliente: los clientes solo consultan los de su empresa. -->
+    <record id="project_client_system_client_rule" model="ir.rule">
+        <field name="name">Sistemas del cliente: Cliente consulta los de su empresa</field>
+        <field name="model_id" ref="project_custom_extension.model_project_client_system"/>
+        <field name="domain_force">[('partner_id', '=', user.partner_id.commercial_partner_id.id)]</field>
+        <field name="groups" eval="[(4, ref('project_custom_extension.group_project_client'))]"/>
+    </record>
+    <record id="project_client_system_module_client_rule" model="ir.rule">
+        <field name="name">Módulos del cliente: Cliente consulta los de su empresa</field>
+        <field name="model_id" ref="project_custom_extension.model_project_client_system_module"/>
+        <field name="domain_force">[('partner_id', '=', user.partner_id.commercial_partner_id.id)]</field>
+        <field name="groups" eval="[(4, ref('project_custom_extension.group_project_client'))]"/>
+    </record>
+    <record id="project_system_customization_client_rule" model="ir.rule">
+        <field name="name">Personalizaciones: Cliente consulta las de su empresa</field>
+        <field name="model_id" ref="project_custom_extension.model_project_system_customization"/>
+        <field name="domain_force">[('partner_id', '=', user.partner_id.commercial_partner_id.id)]</field>
+        <field name="groups" eval="[(4, ref('project_custom_extension.group_project_client'))]"/>
+    </record>
+
     <record id="time_entry_user_own_rule" model="ir.rule">
         <field name="name">Horas: Usuario gestiona solo sus registros</field>
         <field name="model_id" ref="project_custom_extension.model_project_task_time_entry"/>

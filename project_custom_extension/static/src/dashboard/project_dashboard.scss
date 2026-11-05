@@ -452,6 +452,20 @@
     white-space: nowrap;
 }
 
+.o_project_dashboard_progress_deviation {
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+
+    &--behind {
+        color: #c0392b;
+    }
+
+    &--ahead {
+        color: #1e8e3e;
+    }
+}
+
 .o_project_dashboard_alerts {
     padding: 0 18px;
 }

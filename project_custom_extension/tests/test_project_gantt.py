@@ -50,6 +50,8 @@ class TestProjectGantt(TransactionCase):
             "parent_id": cls.root.id,
             "sequence": 2,
             "planned_date_begin": "2026-09-07 08:00:00",
+            # Explicitly without end: subtasks otherwise take the parent's.
+            "date_deadline": False,
         })
         cls.second_root = cls.Task.create({
             "name": "2. Desarrollo",

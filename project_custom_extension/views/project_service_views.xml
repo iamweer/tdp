@@ -1,0 +1,460 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ============================================================
+         Tarea 2657: tipo de servicio y observaciones (staffing)
+         ============================================================ -->
+    <record id="project_service_observation_view_list" model="ir.ui.view">
+        <field name="name">project.service.observation.list</field>
+        <field name="model">project.service.observation</field>
+        <field name="arch" type="xml">
+            <list string="Observaciones del servicio"
+                  decoration-danger="observation_type == 'incident'"
+                  decoration-success="observation_type == 'recognition'">
+                <field name="date"/>
+                <field name="project_id" optional="show"/>
+                <field name="partner_id" optional="hide"/>
+                <field name="observation_type" widget="badge"
+                       decoration-info="observation_type == 'follow_up'"
+                       decoration-warning="observation_type == 'novelty'"
+                       decoration-danger="observation_type == 'incident'"
+                       decoration-success="observation_type == 'recognition'"/>
+                <field name="resource_user_id" widget="many2one_avatar_user" optional="show"/>
+                <field name="name"/>
+                <field name="author_id" widget="many2one_avatar_user" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="project_service_observation_view_form" model="ir.ui.view">
+        <field name="name">project.service.observation.form</field>
+        <field name="model">project.service.observation</field>
+        <field name="arch" type="xml">
+            <form string="Observación del servicio">
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="p. ej. Seguimiento mensual con el cliente"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="project_id" options="{'no_create': True}"/>
+                            <field name="partner_id"/>
+                            <field name="resource_user_id" widget="many2one_avatar_user"
+                                   options="{'no_create': True}"/>
+                        </group>
+                        <group>
+                            <field name="date"/>
+                            <field name="observation_type"/>
+                            <field name="author_id" widget="many2one_avatar_user"/>
+                        </group>
+                    </group>
+                    <field name="description" placeholder="Detalle de la observación del servicio..."/>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="project_service_observation_view_search" model="ir.ui.view">
+        <field name="name">project.service.observation.search</field>
+        <field name="model">project.service.observation</field>
+        <field name="arch" type="xml">
+            <search string="Observaciones del servicio">
+                <field name="name"/>
+                <field name="project_id"/>
+                <field name="partner_id"/>
+                <field name="resource_user_id"/>
+                <filter name="follow_up" string="Seguimiento" domain="[('observation_type', '=', 'follow_up')]"/>
+                <filter name="novelty" string="Novedades" domain="[('observation_type', '=', 'novelty')]"/>
+                <filter name="incident" string="Incidentes" domain="[('observation_type', '=', 'incident')]"/>
+                <filter name="recognition" string="Reconocimientos" domain="[('observation_type', '=', 'recognition')]"/>
+                <separator/>
+                <filter name="date" string="Fecha" date="date"/>
+                <group expand="0" string="Agrupar por">
+                    <filter name="group_project" string="Servicio / proyecto" context="{'group_by': 'project_id'}"/>
+                    <filter name="group_partner" string="Cliente" context="{'group_by': 'partner_id'}"/>
+                    <filter name="group_type" string="Tipo" context="{'group_by': 'observation_type'}"/>
+                    <filter name="group_resource" string="Recurso" context="{'group_by': 'resource_user_id'}"/>
+                    <filter name="group_month" string="Mes" context="{'group_by': 'date:month'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="project_service_observation_action" model="ir.actions.act_window">
+        <field name="name">Observaciones del servicio</field>
+        <field name="res_model">project.service.observation</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Registre la primera observación del servicio</p>
+            <p>Seguimientos, novedades, incidentes y reconocimientos de los servicios de staffing
+                y soporte, con su histórico por cliente y recurso.</p>
+        </field>
+    </record>
+
+    <menuitem id="project_service_observation_menu"
+              name="Observaciones del servicio"
+              parent="project.menu_main_pm"
+              action="project_service_observation_action"
+              sequence="40"
+              groups="project.group_project_user,project.group_project_manager"/>
+
+    <record id="project_project_view_form_service" model="ir.ui.view">
+        <field name="name">project.project.form.service</field>
+        <field name="model">project.project</field>
+        <field name="inherit_id" ref="project.edit_project"/>
+        <field name="arch" type="xml">
+            <div name="button_box" position="inside">
+                <button name="action_open_service_observations"
+                        type="object"
+                        class="oe_stat_button"
+                        icon="fa-commenting-o"
+                        invisible="project_type == 'project' and not service_observation_count">
+                    <field name="service_observation_count" widget="statinfo" string="Observaciones"/>
+                </button>
+            </div>
+            <field name="company_type" position="after">
+                <field name="project_type"/>
+            </field>
+            <page name="description" position="after">
+                <page name="service_observations"
+                      string="Observaciones del servicio"
+                      invisible="project_type == 'project'">
+                    <field name="service_observation_ids"
+                           context="{'default_project_id': id}">
+                        <list editable="top">
+                            <field name="date"/>
+                            <field name="observation_type"/>
+                            <field name="resource_user_id" widget="many2one_avatar_user"
+                                   options="{'no_create': True}"/>
+                            <field name="name"/>
+                            <field name="author_id" widget="many2one_avatar_user"/>
+                        </list>
+                    </field>
+                </page>
+            </page>
+        </field>
+    </record>
+
+    <record id="project_project_view_list_service" model="ir.ui.view">
+        <field name="name">project.project.list.service</field>
+        <field name="model">project.project</field>
+        <field name="inherit_id" ref="project.view_project"/>
+        <field name="arch" type="xml">
+            <field name="name" position="after">
+                <field name="project_type" optional="show"/>
+            </field>
+        </field>
+    </record>
+
+    <record id="project_project_view_search_service" model="ir.ui.view">
+        <field name="name">project.project.search.service</field>
+        <field name="model">project.project</field>
+        <field name="inherit_id" ref="project.view_project_project_filter"/>
+        <field name="arch" type="xml">
+            <xpath expr="//search" position="inside">
+                <separator/>
+                <filter name="type_project" string="Proyectos" domain="[('project_type', '=', 'project')]"/>
+                <filter name="type_staffing" string="Staffing" domain="[('project_type', '=', 'staffing')]"/>
+                <filter name="type_support" string="Soporte" domain="[('project_type', '=', 'support')]"/>
+                <filter name="group_project_type" string="Tipo de servicio" context="{'group_by': 'project_type'}"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- ============================================================
+         Tarea 2658: sistemas, módulos y personalizaciones por cliente
+         ============================================================ -->
+    <record id="project_system_view_list" model="ir.ui.view">
+        <field name="name">project.system.list</field>
+        <field name="model">project.system</field>
+        <field name="arch" type="xml">
+            <list string="Sistemas">
+                <field name="name"/>
+                <field name="description"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="project_system_view_form" model="ir.ui.view">
+        <field name="name">project.system.form</field>
+        <field name="model">project.system</field>
+        <field name="arch" type="xml">
+            <form string="Sistema">
+                <sheet>
+                    <widget name="web_ribbon" title="Archivado" bg_color="text-bg-danger" invisible="active"/>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="p. ej. Odoo, Sofía"/></h1>
+                    </div>
+                    <field name="active" invisible="1"/>
+                    <field name="description" placeholder="Descripción del sistema"/>
+                    <field name="module_ids">
+                        <list editable="bottom">
+                            <field name="sequence" widget="handle"/>
+                            <field name="name"/>
+                            <field name="is_base"/>
+                            <field name="description"/>
+                        </list>
+                    </field>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="project_system_action" model="ir.actions.act_window">
+        <field name="name">Catálogo de sistemas</field>
+        <field name="res_model">project.system</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Cree el primer sistema del catálogo</p>
+            <p>Registre cada sistema o producto que se implementa (por ejemplo Odoo) con sus módulos base.</p>
+        </field>
+    </record>
+
+    <record id="project_client_system_view_list" model="ir.ui.view">
+        <field name="name">project.client.system.list</field>
+        <field name="model">project.client.system</field>
+        <field name="arch" type="xml">
+            <list string="Sistemas por cliente">
+                <field name="partner_id"/>
+                <field name="system_id"/>
+                <field name="date_opened"/>
+                <field name="project_id" optional="show"/>
+                <field name="active_module_count"/>
+                <field name="open_customization_count"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="project_client_system_view_form" model="ir.ui.view">
+        <field name="name">project.client.system.form</field>
+        <field name="model">project.client.system</field>
+        <field name="arch" type="xml">
+            <form string="Sistema del cliente">
+                <sheet>
+                    <widget name="web_ribbon" title="Archivado" bg_color="text-bg-danger" invisible="active"/>
+                    <field name="active" invisible="1"/>
+                    <group>
+                        <group>
+                            <field name="partner_id" options="{'no_create': True}"/>
+                            <field name="system_id" options="{'no_create': True}"/>
+                        </group>
+                        <group>
+                            <field name="date_opened"/>
+                            <field name="project_id" options="{'no_create': True}"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page name="modules" string="Módulos activados">
+                            <field name="module_line_ids" context="{'default_client_system_id': id}">
+                                <list editable="bottom" decoration-muted="state == 'inactive'">
+                                    <field name="system_id" column_invisible="True"/>
+                                    <field name="module_id" options="{'no_create': True}"/>
+                                    <field name="is_base"/>
+                                    <field name="activation_date"/>
+                                    <field name="state"/>
+                                    <field name="notes"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page name="customizations" string="Personalizaciones">
+                            <field name="customization_ids" context="{'default_client_system_id': id}">
+                                <list decoration-success="state == 'delivered'"
+                                      decoration-muted="state == 'rejected'">
+                                    <field name="request_date"/>
+                                    <field name="name"/>
+                                    <field name="module_id" optional="show"/>
+                                    <field name="user_id" widget="many2one_avatar_user" optional="show"/>
+                                    <field name="task_id" optional="hide"/>
+                                    <field name="state" widget="badge"
+                                           decoration-info="state in ('requested', 'analysis')"
+                                           decoration-warning="state == 'development'"
+                                           decoration-success="state == 'delivered'"/>
+                                    <field name="delivery_date" optional="show"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page name="notes" string="Notas">
+                            <field name="notes"/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="project_client_system_view_search" model="ir.ui.view">
+        <field name="name">project.client.system.search</field>
+        <field name="model">project.client.system</field>
+        <field name="arch" type="xml">
+            <search string="Sistemas por cliente">
+                <field name="partner_id"/>
+                <field name="system_id"/>
+                <filter name="archived" string="Archivados" domain="[('active', '=', False)]"/>
+                <group expand="0" string="Agrupar por">
+                    <filter name="group_partner" string="Cliente" context="{'group_by': 'partner_id'}"/>
+                    <filter name="group_system" string="Sistema" context="{'group_by': 'system_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="project_client_system_action" model="ir.actions.act_window">
+        <field name="name">Sistemas por cliente</field>
+        <field name="res_model">project.client.system</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Registre la apertura de un sistema para un cliente</p>
+            <p>Lleve la trazabilidad de los módulos base que activó cada cliente y de las
+                personalizaciones que solicitó, con su estado.</p>
+        </field>
+    </record>
+
+    <record id="project_system_customization_view_list" model="ir.ui.view">
+        <field name="name">project.system.customization.list</field>
+        <field name="model">project.system.customization</field>
+        <field name="arch" type="xml">
+            <list string="Personalizaciones"
+                  decoration-success="state == 'delivered'"
+                  decoration-muted="state == 'rejected'">
+                <field name="request_date"/>
+                <field name="partner_id"/>
+                <field name="system_id" optional="show"/>
+                <field name="name"/>
+                <field name="module_id" optional="hide"/>
+                <field name="user_id" widget="many2one_avatar_user" optional="show"/>
+                <field name="project_id" optional="hide"/>
+                <field name="state" widget="badge"
+                       decoration-info="state in ('requested', 'analysis')"
+                       decoration-warning="state == 'development'"
+                       decoration-success="state == 'delivered'"/>
+                <field name="delivery_date" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="project_system_customization_view_kanban" model="ir.ui.view">
+        <field name="name">project.system.customization.kanban</field>
+        <field name="model">project.system.customization</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="state" quick_create="false">
+                <templates>
+                    <t t-name="card">
+                        <field name="name" class="fw-bold"/>
+                        <div class="text-muted small">
+                            <field name="partner_id"/> · <field name="system_id"/>
+                        </div>
+                        <footer>
+                            <field name="request_date" class="small"/>
+                            <field name="user_id" widget="many2one_avatar_user" class="ms-auto"/>
+                        </footer>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <record id="project_system_customization_view_form" model="ir.ui.view">
+        <field name="name">project.system.customization.form</field>
+        <field name="model">project.system.customization</field>
+        <field name="arch" type="xml">
+            <form string="Personalización">
+                <header>
+                    <field name="state" widget="statusbar" options="{'clickable': '1'}"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="p. ej. Reporte de cartera por vendedor"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="client_system_id" options="{'no_create': True}"/>
+                            <field name="partner_id"/>
+                            <field name="system_id"/>
+                            <field name="module_id" options="{'no_create': True}"/>
+                        </group>
+                        <group>
+                            <field name="request_date"/>
+                            <field name="user_id" widget="many2one_avatar_user"/>
+                            <field name="project_id" options="{'no_create': True}"/>
+                            <field name="task_id" options="{'no_create': True}"/>
+                            <field name="delivery_date"/>
+                        </group>
+                    </group>
+                    <field name="description" placeholder="Qué solicitó el cliente y alcance acordado..."/>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="project_system_customization_view_search" model="ir.ui.view">
+        <field name="name">project.system.customization.search</field>
+        <field name="model">project.system.customization</field>
+        <field name="arch" type="xml">
+            <search string="Personalizaciones">
+                <field name="name"/>
+                <field name="partner_id"/>
+                <field name="system_id"/>
+                <field name="user_id"/>
+                <filter name="open" string="Abiertas" domain="[('state', 'not in', ('delivered', 'rejected'))]"/>
+                <filter name="delivered" string="Entregadas" domain="[('state', '=', 'delivered')]"/>
+                <group expand="0" string="Agrupar por">
+                    <filter name="group_partner" string="Cliente" context="{'group_by': 'partner_id'}"/>
+                    <filter name="group_system" string="Sistema" context="{'group_by': 'system_id'}"/>
+                    <filter name="group_state" string="Estado" context="{'group_by': 'state'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="project_system_customization_action" model="ir.actions.act_window">
+        <field name="name">Personalizaciones</field>
+        <field name="res_model">project.system.customization</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="context">{'search_default_open': 1}</field>
+    </record>
+
+    <menuitem id="project_system_menu_root"
+              name="Sistemas"
+              parent="project.menu_main_pm"
+              sequence="41"
+              groups="project.group_project_user,project.group_project_manager"/>
+    <menuitem id="project_client_system_menu"
+              name="Sistemas por cliente"
+              parent="project_system_menu_root"
+              action="project_client_system_action"
+              sequence="1"/>
+    <menuitem id="project_system_customization_menu"
+              name="Personalizaciones"
+              parent="project_system_menu_root"
+              action="project_system_customization_action"
+              sequence="2"/>
+    <menuitem id="project_system_catalog_menu"
+              name="Catálogo de sistemas"
+              parent="project_system_menu_root"
+              action="project_system_action"
+              sequence="3"
+              groups="project.group_project_manager"/>
+
+    <record id="res_partner_view_form_client_systems" model="ir.ui.view">
+        <field name="name">res.partner.form.client.systems</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <div name="button_box" position="inside">
+                <button name="action_open_client_systems"
+                        type="object"
+                        class="oe_stat_button"
+                        icon="fa-cubes"
+                        groups="project.group_project_user"
+                        invisible="not client_system_count">
+                    <field name="client_system_count" widget="statinfo" string="Sistemas"/>
+                </button>
+            </div>
+        </field>
+    </record>
+</odoo>
