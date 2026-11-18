@@ -147,7 +147,7 @@ class TestProjectRoleAccess(TransactionCase):
         self.assertNotIn(self.archived_task_project.id, visible_ids)
         self.assertNotIn(self.archived_project.id, visible_ids)
 
-    def test_project_user_can_edit_only_projects_created_by_them(self):
+    def test_project_user_cannot_edit_unrelated_projects(self):
         own_project = self.Project.with_user(self.project_user).create({
             "name": "Proyecto propio editable",
         })
@@ -163,6 +163,85 @@ class TestProjectRoleAccess(TransactionCase):
 
         with self.assertRaises(AccessError):
             self.user_project.with_user(self.project_user).check_access("write")
+
+    def test_project_responsible_can_edit_project_created_by_other(self):
+        project = self._create_project(
+            "Proyecto a cargo del Usuario",
+            self.other_customer,
+            user_id=self.project_user.id,
+        )
+        self.assertNotEqual(project.create_uid, self.project_user)
+        as_responsible = project.with_user(self.project_user)
+
+        self.assertIn(project, self.Project.with_user(self.project_user).search([]))
+        as_responsible.check_access("write")
+        as_responsible.write({"name": "Proyecto editado por responsable"})
+        self.assertEqual(project.name, "Proyecto editado por responsable")
+        with self.assertRaises(AccessError):
+            as_responsible.unlink()
+
+        # El permiso sigue al responsable actual del proyecto.
+        project.user_id = self.manager
+        self.assertNotIn(project, self.Project.with_user(self.project_user).search([]))
+        with self.assertRaises(AccessError):
+            as_responsible.write({"name": "Ya no es responsable"})
+
+    def test_project_creator_keeps_edit_access_with_other_responsible(self):
+        project = self.Project.with_user(self.project_user).create({
+            "name": "Proyecto creado por Usuario",
+            "user_id": self.manager.id,
+        })
+        project.with_user(self.project_user).write({"name": "Editado por creador"})
+        self.assertEqual(project.name, "Editado por creador")
+
+    def test_project_responsible_reaches_project_related_records(self):
+        project = self._create_project(
+            "Proyecto con datos del responsable",
+            self.other_customer,
+            user_id=self.project_user.id,
+        )
+        task = self._create_task("Fase del proyecto a cargo", project)
+        sprint = self.env["project.sprint"].create({
+            "name": "Sprint del responsable",
+            "project_id": project.id,
+        })
+        deliverable = self.env["project.deliverable"].create({
+            "name": "Entregable del responsable",
+            "phase_id": task.id,
+        })
+        observation = self.env["project.service.observation"].create({
+            "name": "Observación del responsable",
+            "project_id": project.id,
+        })
+
+        for record in (task, sprint, deliverable, observation):
+            with self.subTest(model=record._name):
+                as_responsible = record.with_user(self.project_user)
+                self.assertIn(
+                    record,
+                    as_responsible.search([("id", "=", record.id)]),
+                )
+                as_responsible.check_access("write")
+
+        self.env.flush_all()
+        report = self.env["report.project.task.user"].with_user(self.project_user)
+        self.assertTrue(report.search([("project_id", "=", project.id)]))
+
+        new_task = self.Task.with_user(self.project_user).create({
+            "name": "Tarea creada por responsable",
+            "project_id": project.id,
+        })
+        self.assertEqual(new_task.project_id, project)
+
+    def test_client_responsible_cannot_edit_project(self):
+        project = self._create_project(
+            "Proyecto con Cliente como responsable",
+            self.other_customer,
+            user_id=self.client_user.id,
+        )
+        self.assertNotIn(project, self.Project.with_user(self.client_user).search([]))
+        with self.assertRaises(AccessError):
+            project.with_user(self.client_user).write({"name": "No permitido"})
 
     def test_project_user_sees_all_active_tasks_in_visible_projects(self):
         visible_tasks = set(
@@ -471,7 +550,7 @@ class TestProjectRoleAccess(TransactionCase):
         self.assertEqual(self.user_assigned_task.project_weight, 60)
         self.assertEqual(self.user_context_task.project_weight, 40)
 
-        # The project fields still require being its creator.
+        # The project fields still require being its creator or responsible.
         with self.assertRaises(AccessError):
             project.write({"name": "Proyecto renombrado"})
         with self.assertRaises(AccessError):

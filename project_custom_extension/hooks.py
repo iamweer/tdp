@@ -58,8 +58,9 @@ def configure_project_security(env):
 
     user_project_report_domain = """[
         ('project_id.active', '=', True),
-        '|',
+        '|', '|',
             ('project_id.create_uid', '=', user.id),
+            ('project_id.user_id', '=', user.id),
             ('project_id.tasks', 'any', [
                 ('active', '=', True),
                 ('user_ids', 'in', user.id),

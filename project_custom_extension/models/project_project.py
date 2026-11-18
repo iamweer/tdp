@@ -240,9 +240,12 @@ class ProjectProject(models.Model):
             raise AccessError(_("No tiene permiso para modificar proyectos."))
 
         self.check_access("write")
-        if any(project.create_uid != self.env.user for project in self):
+        if any(
+            self.env.user not in (project.create_uid | project.user_id)
+            for project in self
+        ):
             raise AccessError(
-                _("Solo puede modificar los proyectos que usted creó.")
+                _("Solo puede modificar los proyectos que usted creó o de los que es responsable.")
             )
         return super().write(vals)
 
